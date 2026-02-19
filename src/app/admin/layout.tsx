@@ -1,6 +1,11 @@
 import AdminGuard from "@/src/components/AdminGuard";
 import AdminSidebar from "@/src/components/AdminSidebar";
+import { Metadata } from "next";
 
+export const metadata: Metadata = {
+  title: "KalikaScan Admin",
+  description: "KalikaScan Administrative Dashboard",
+};
 export default function AdminLayout({
   children,
 }: {

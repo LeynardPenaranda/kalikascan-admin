@@ -7,13 +7,13 @@ import { usePathname } from "next/navigation";
 import { auth } from "@/src/lib/firebase/client";
 import {
   LayoutDashboard,
-  Leaf,
   MapPinned,
   Stethoscope,
   Users,
   Settings,
   LogOut,
   ShieldUser,
+  Sprout,
 } from "lucide-react";
 
 type NavItem = {
@@ -24,14 +24,18 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
-  { label: "Plant Scans Report", href: "/admin/plant-scans", icon: Leaf },
+  {
+    label: "Plant Scans Report",
+    href: "/admin/plant-scans-report",
+    icon: Sprout,
+  },
   { label: "Map Posts Report", href: "/admin/map-posts", icon: MapPinned },
   {
     label: "Health Assessments Report",
-    href: "/admin/health",
+    href: "/admin/health-assessments-report",
     icon: Stethoscope,
   },
-  { label: "Users", href: "/admin/users", icon: Users },
+  { label: "KalikaScan Users", href: "/admin/kalikascan-users", icon: Users },
   {
     label: "Register New Admin",
     href: "/admin/create-admin",
@@ -67,7 +71,7 @@ export default function AdminSidebar() {
               <div className="text-sm font-bold text-app-headerText">
                 KalikaScan
               </div>
-              <div className="text-xs text-app-text">Admin Dashboard</div>
+              <div className="text-xs text-app-text">Admin Menu</div>
             </div>
           </div>
         </div>
@@ -132,10 +136,10 @@ export default function AdminSidebar() {
         <div className="p-3 border-t border-black/10">
           <button
             onClick={onLogout}
-            className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-app-text hover:text-app-button transition-colors"
+            className="w-full justify-around bg-app-button flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white hover:bg-app-buttonHover transition-colors"
           >
-            <LogOut className="w-5 h-5" />
             <span className="font-medium">Logout</span>
+            <LogOut className="w-5 h-5" />
           </button>
 
           <div className="px-3 pt-3 text-[11px] text-black/35">
