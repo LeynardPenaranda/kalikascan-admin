@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import {
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+} from "firebase/auth";
 import { auth } from "@/src/lib/firebase/client";
 import { useToast } from "../hooks/useToast";
 import { Eye, EyeClosed } from "lucide-react";
@@ -17,6 +20,62 @@ export default function AdminLoginCard({ onSuccess }: Props) {
   const [isOpenEye, setIsOpenEye] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isSendingForgotPass, setIsSendingForgotPass] = useState(false);
+
+  const canResetPassword = email.trim().length > 0 && !isSendingForgotPass;
+
+  async function onForgotPassword() {
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      showToast({
+        message: "Email required",
+        type: "danger",
+        description: "Please enter your email address to reset your password.",
+      });
+      return;
+    }
+
+    try {
+      setIsSendingForgotPass(true);
+
+      await sendPasswordResetEmail(auth, trimmedEmail);
+
+      showToast({
+        message: "Reset email sent",
+        type: "success",
+        description:
+          "Check your inbox (and Spam). We sent you a link to reset your password.",
+      });
+    } catch (error: any) {
+      let errorMessage = "Failed to send reset email.";
+      let descriptionMessage = "Please try again later.";
+
+      switch (error?.code) {
+        case "auth/user-not-found":
+          errorMessage = "No account found";
+          descriptionMessage =
+            "There is no account associated with this email.";
+          break;
+        case "auth/invalid-email":
+          errorMessage = "Invalid email";
+          descriptionMessage = "Please enter a valid email address.";
+          break;
+        case "auth/too-many-requests":
+          errorMessage = "Too many requests";
+          descriptionMessage = "Please wait a few minutes before trying again.";
+          break;
+      }
+
+      showToast({
+        message: errorMessage,
+        type: "danger",
+        description: descriptionMessage,
+      });
+    } finally {
+      setIsSendingForgotPass(false);
+    }
+  }
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -123,6 +182,14 @@ export default function AdminLoginCard({ onSuccess }: Props) {
             />
           )}
         </div>
+        <button
+          type="button"
+          onClick={onForgotPassword}
+          disabled={!canResetPassword}
+          className="text-xs text-gray-500 hover:text-gray-700 underline disabled:opacity-50 disabled:cursor-not-allowed self-end"
+        >
+          {isSendingForgotPass ? "Sending..." : "Forgot password?"}
+        </button>
 
         {err && (
           <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

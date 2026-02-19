@@ -13,6 +13,7 @@ import {
   Users,
   Settings,
   LogOut,
+  ShieldUser,
 } from "lucide-react";
 
 type NavItem = {
@@ -23,10 +24,19 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
-  { label: "Plant Scans", href: "/admin/plant-scans", icon: Leaf },
-  { label: "Map Scans", href: "/admin/map-scans", icon: MapPinned },
-  { label: "Health Assessments", href: "/admin/health", icon: Stethoscope },
+  { label: "Plant Scans Report", href: "/admin/plant-scans", icon: Leaf },
+  { label: "Map Posts Report", href: "/admin/map-posts", icon: MapPinned },
+  {
+    label: "Health Assessments Report",
+    href: "/admin/health",
+    icon: Stethoscope,
+  },
   { label: "Users", href: "/admin/users", icon: Users },
+  {
+    label: "Register New Admin",
+    href: "/admin/create-admin",
+    icon: ShieldUser,
+  },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ];
 
@@ -35,7 +45,7 @@ export default function AdminSidebar() {
 
   async function onLogout() {
     await auth.signOut();
-    window.location.href = "/"; // go back to login/home
+    window.location.href = "/";
   }
 
   return (
@@ -81,17 +91,36 @@ export default function AdminSidebar() {
                   <Link
                     href={item.href}
                     className={[
-                      "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition",
+                      "group relative flex items-center gap-3 px-3 py-2.5 text-sm transition-colors",
                       active
-                        ? "bg-app-primarySoft text-app-headerText"
-                        : "text-app-text hover:bg-black/5",
+                        ? "text-app-button font-medium"
+                        : "text-app-text hover:text-app-button",
                     ].join(" ")}
                   >
-                    <Icon className="w-5 h-5" />
-                    <span className="font-medium">{item.label}</span>
-                    {active ? (
-                      <span className="ml-auto h-2 w-2 rounded-full bg-app-button" />
-                    ) : null}
+                    {/* Icon */}
+                    <Icon
+                      className={[
+                        "w-5 h-5 transition-colors",
+                        active
+                          ? "text-app-button"
+                          : "text-app-text group-hover:text-app-button",
+                      ].join(" ")}
+                    />
+
+                    {/* Label */}
+                    <span>{item.label}</span>
+
+                    {/* Animated underline (hover + active) */}
+                    <span
+                      className={[
+                        "pointer-events-none absolute left-3 right-3 -bottom-1 h-[2px] rounded-full bg-app-button",
+                        "origin-left transform transition-transform duration-300 ease-out",
+                        // start hidden, grow left->right on hover
+                        active
+                          ? "scale-x-100"
+                          : "scale-x-0 group-hover:scale-x-100",
+                      ].join(" ")}
+                    />
                   </Link>
                 </li>
               );
@@ -103,7 +132,7 @@ export default function AdminSidebar() {
         <div className="p-3 border-t border-black/10">
           <button
             onClick={onLogout}
-            className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-app-text hover:bg-black/5 transition"
+            className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-app-text hover:text-app-button transition-colors"
           >
             <LogOut className="w-5 h-5" />
             <span className="font-medium">Logout</span>

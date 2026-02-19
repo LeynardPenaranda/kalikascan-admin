@@ -4,6 +4,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/src/lib/firebase/client";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import FullPageLoader from "./ui/FullPageLoader";
 
 export default function AdminGuard({
   children,
@@ -38,7 +39,7 @@ export default function AdminGuard({
     return () => unsub();
   }, [router]);
 
-  if (!ready) return <p className="p-6">Loading...</p>;
+  if (!ready) return <FullPageLoader />;
   if (!allowed) return null;
 
   return <>{children}</>;
