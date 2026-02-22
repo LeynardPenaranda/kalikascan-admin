@@ -2,17 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileDown, RotateCcw } from "lucide-react";
-import HealthAssessmentDetailsModal, {
-  HealthAssessmentRow,
-} from "@/src/components/modals/HealthAssessmentDetailsModal";
-import { exportHealthAssessmentsToExcelCsv } from "@/src/utils/exportHealthAssessmentsToExcelCsv";
+import {
+  deriveVerifyStatus,
+  exportMapPostsToExcelCsv,
+  type VerifyStatus,
+} from "@/src/utils/exportMapPostsToExcelCsv";
+
+import MapPostDetailsModal from "@/src/components/modals/MapPostDetailsModal";
 
 const PAGE_SIZE = 10;
-
-function pct(n: number | null | undefined) {
-  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
-  return `${Math.round(n * 100)}%`;
-}
 
 function formatLatLon(lat: number, lon: number) {
   const latDir = lat >= 0 ? "N" : "S";
@@ -34,29 +32,45 @@ function initials(s?: string | null) {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-export default function HealthAssessmentsReport() {
+function lastItem(arr: any) {
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  return arr[arr.length - 1];
+}
+
+function expertLabel(x: any) {
+  if (!x) return "—";
+  if (typeof x === "string") return x;
+  return (
+    x.displayName || x.username || x.email || x.name || x.uid || x.id || "—"
+  );
+}
+
+function statusPill(status: VerifyStatus) {
+  const base =
+    "inline-flex items-center rounded-full border border-gray-200 px-2 py-0.5 text-xs font-medium";
+  return <span className={base}>{status}</span>;
+}
+
+export default function MapPostsReport() {
   const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState<HealthAssessmentRow[]>([]);
+  const [rows, setRows] = useState<any[]>([]);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
-
-  const [addrMap, setAddrMap] = useState<Record<string, string>>({});
-
-  const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState<HealthAssessmentRow | null>(null);
 
   const [downloading, setDownloading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadHealth = useCallback(async () => {
+  //  Modal state
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<any | null>(null);
+
+  const loadPosts = useCallback(async () => {
     setRefreshing(true);
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/health-assessments", {
-        cache: "no-store",
-      });
+      const res = await fetch("/api/admin/map-posts", { cache: "no-store" });
       const data = await res.json();
-      setRows(Array.isArray(data?.assessments) ? data.assessments : []);
+      setRows(Array.isArray(data?.posts) ? data.posts : []);
       setPage(1);
     } finally {
       setRefreshing(false);
@@ -65,98 +79,37 @@ export default function HealthAssessmentsReport() {
   }, []);
 
   useEffect(() => {
-    loadHealth();
-  }, [loadHealth]);
+    loadPosts();
+  }, [loadPosts]);
 
   useEffect(() => setPage(1), [q]);
-
-  // ✅ Reverse geocode missing addresses (same pattern as PlantScans)
-  useEffect(() => {
-    const missing = rows.filter(
-      (r) =>
-        !r.addressText &&
-        r.location?.latitude != null &&
-        r.location?.longitude != null &&
-        !addrMap[r.id],
-    );
-
-    if (missing.length === 0) return;
-
-    let cancelled = false;
-
-    async function run() {
-      const batch = missing.slice(0, 10);
-
-      for (const r of batch) {
-        try {
-          const lat = r.location!.latitude!;
-          const lon = r.location!.longitude!;
-
-          const res = await fetch(`/api/geocode/reverse?lat=${lat}&lon=${lon}`);
-          const data = await res.json();
-
-          if (cancelled) return;
-
-          if (data?.address) {
-            setAddrMap((m) => ({ ...m, [r.id]: data.address }));
-
-            // persist back to your db
-            await fetch("/api/admin/health-assessments/set-address", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                assessmentId: r.id,
-                uid: r.uid,
-                addressText: data.address,
-              }),
-            });
-
-            setRows((prev) =>
-              prev.map((x) =>
-                x.id === r.id ? { ...x, addressText: data.address } : x,
-              ),
-            );
-          }
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [rows, addrMap]);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return rows;
 
-    return rows.filter((r) => {
+    return rows.filter((p) => {
+      const user = p?.user ?? p?.userSnapshot ?? {};
       const userText =
-        r.user?.displayName || r.user?.username || r.user?.email || r.uid || "";
-      const day = r.createdDay || "";
-      const addr = r.addressText || "";
+        user?.displayName || user?.username || user?.email || p?.uid || "";
 
-      const status =
-        r.isHealthyBinary == null
-          ? ""
-          : r.isHealthyBinary
-            ? "healthy"
-            : "unhealthy";
+      const plant = p?.plant?.scientificName || p?.topSuggestion?.name || "";
+      const day = p?.createdDay || "";
+      const address =
+        p?.detailedAddress ||
+        p?.addressText ||
+        p?.readableLocation ||
+        p?.location?.readableLocation ||
+        "";
 
-      const topDisease =
-        r.diseaseName ||
-        r.topDisease?.name ||
-        r.topDisease?.details?.local_name;
+      const status = deriveVerifyStatus(p);
 
       return (
-        userText.toLowerCase().includes(s) ||
-        day.toLowerCase().includes(s) ||
-        addr.toLowerCase().includes(s) ||
-        status.includes(s) ||
-        (topDisease ?? "").toLowerCase().includes(s)
+        String(userText).toLowerCase().includes(s) ||
+        String(plant).toLowerCase().includes(s) ||
+        String(day).toLowerCase().includes(s) ||
+        String(address).toLowerCase().includes(s) ||
+        String(status).toLowerCase().includes(s)
       );
     });
   }, [rows, q]);
@@ -183,8 +136,8 @@ export default function HealthAssessmentsReport() {
     setPage((p) => Math.min(totalPages, p + 1));
   }
 
-  function openDetails(r: HealthAssessmentRow) {
-    setSelected(r);
+  function openDetails(p: any) {
+    setSelected(p);
     setOpen(true);
   }
   function closeDetails() {
@@ -195,26 +148,24 @@ export default function HealthAssessmentsReport() {
   async function onDownload() {
     try {
       setDownloading(true);
-      exportHealthAssessmentsToExcelCsv(filtered);
+      exportMapPostsToExcelCsv(filtered);
     } finally {
       setDownloading(false);
     }
   }
 
   return (
-    <div className="w-full h-full overflow-hidden flex flex-col mt-5 ">
+    <div className="w-full h-full overflow-hidden flex flex-col">
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="text-xs text-gray-500">
           {loading ? (
             <>
-              Showing <span className="font-medium text-gray-700">0</span>{" "}
-              assessments
+              Showing <span className="font-medium text-gray-700">0</span> posts
             </>
           ) : total === 0 ? (
             <>
-              Showing <span className="font-medium text-gray-700">0</span>{" "}
-              assessments
+              Showing <span className="font-medium text-gray-700">0</span> posts
             </>
           ) : (
             <>
@@ -225,7 +176,6 @@ export default function HealthAssessmentsReport() {
               of <span className="font-medium text-gray-700">{total}</span>
             </>
           )}
-
           {q.trim() ? (
             <span className="ml-2 text-gray-400">
               (filtered by “{q.trim()}”)
@@ -238,7 +188,7 @@ export default function HealthAssessmentsReport() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search user, status, disease, date, address..."
+              placeholder="Search user, plant, date, address, status..."
               className="w-[360px] max-w-full text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none bg-white transition"
             />
           </div>
@@ -256,7 +206,7 @@ export default function HealthAssessmentsReport() {
 
           <button
             type="button"
-            onClick={loadHealth}
+            onClick={loadPosts}
             disabled={refreshing}
             className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-white hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
             title="Refresh data"
@@ -270,10 +220,12 @@ export default function HealthAssessmentsReport() {
             onClick={onDownload}
             disabled={loading || downloading || total === 0}
             className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-app-button text-white hover:bg-app-buttonHover active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-            title={total === 0 ? "No records to export" : "Download CSV"}
+            title={
+              total === 0 ? "No records to export" : "Download results to CSV"
+            }
           >
             <FileDown size={14} />
-            {downloading ? "Preparing..." : "Download Health Report.csv"}
+            {downloading ? "Preparing..." : "Download Map Report.csv"}
           </button>
 
           <button
@@ -306,7 +258,7 @@ export default function HealthAssessmentsReport() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search health assessments..."
+          placeholder="Search map posts..."
           className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-xs outline-none bg-white transition"
         />
         {q.trim() ? (
@@ -320,24 +272,21 @@ export default function HealthAssessmentsReport() {
         ) : null}
       </div>
 
-      {/* Table */}
+      {/* table */}
       <div className="flex-1 min-h-0 overflow-auto rounded-xl border border-gray-100 bg-white">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-white z-10">
             <tr className="text-left border-b border-gray-100">
+              <th className="px-4 py-3 font-medium text-gray-600">Posted By</th>
+              <th className="px-4 py-3 font-medium text-gray-600">Plant</th>
               <th className="px-4 py-3 font-medium text-gray-600">
-                Assessed By
+                Verify Status
               </th>
-              <th className="px-4 py-3 font-medium text-gray-600">Result</th>
+              <th className="px-4 py-3 font-medium text-gray-600">Expert</th>
               <th className="px-4 py-3 font-medium text-gray-600">
-                Confidence
+                Posted Date
               </th>
-              <th className="px-4 py-3 font-medium text-gray-600">
-                Top Disease
-              </th>
-              <th className="px-4 py-3 font-medium text-gray-600">
-                Captured In
-              </th>
+              <th className="px-4 py-3 font-medium text-gray-600">Address</th>
               <th className="px-4 py-3 font-medium text-gray-600">Location</th>
             </tr>
           </thead>
@@ -346,7 +295,7 @@ export default function HealthAssessmentsReport() {
             {loading ? (
               <tr className="bg-white">
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-10 text-center text-gray-500"
                 >
                   Loading...
@@ -355,50 +304,73 @@ export default function HealthAssessmentsReport() {
             ) : total === 0 ? (
               <tr className="bg-white">
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-10 text-center text-gray-500"
                 >
-                  {q.trim()
-                    ? "No matching health assessments found."
-                    : "No health assessments found."}
+                  {q.trim() ? "No matching posts found." : "No posts found."}
                 </td>
               </tr>
             ) : (
-              paged.map((r) => {
+              paged.map((p) => {
+                const user = p?.user ?? p?.userSnapshot ?? {};
                 const display =
-                  r.user?.displayName ||
-                  r.user?.username ||
-                  r.user?.email ||
+                  user?.displayName ||
+                  user?.username ||
+                  user?.email ||
+                  p?.uid ||
                   "Unknown user";
 
-                const lat = r.location?.latitude ?? null;
-                const lon = r.location?.longitude ?? null;
+                const status = deriveVerifyStatus(p);
 
-                const status =
-                  r.isHealthyBinary == null
-                    ? "—"
-                    : r.isHealthyBinary
-                      ? "Healthy 🌿"
-                      : "Unhealthy 🩺";
+                const validated = Array.isArray(p?.expertValidatedBy)
+                  ? p.expertValidatedBy
+                  : [];
+                const invalidated = Array.isArray(p?.invalidatedByExpert)
+                  ? p.invalidatedByExpert
+                  : [];
 
-                const topDisease =
-                  r.diseaseName ||
-                  r.topDisease?.details?.local_name ||
-                  r.topDisease?.name ||
+                const expert =
+                  status === "Invalidated by Expert"
+                    ? expertLabel(lastItem(invalidated))
+                    : status === "Verified"
+                      ? expertLabel(lastItem(validated))
+                      : "—";
+
+                const plant = p?.plant ?? {};
+                const top = p?.topSuggestion ?? plant?.topSuggestion ?? {};
+                const scientificName =
+                  plant?.scientificName || top?.name || p?.plantName || "—";
+
+                const address =
+                  p?.detailedAddress ||
+                  p?.addressText ||
+                  p?.readableLocation ||
+                  p?.location?.readableLocation ||
                   "—";
+
+                const lat = p?.location?.latitude ?? p?.latitude ?? null;
+                const lon = p?.location?.longitude ?? p?.longitude ?? null;
+
+                const thumb =
+                  Array.isArray(p?.imageUrls) && p.imageUrls.length > 0
+                    ? p.imageUrls[0]
+                    : Array.isArray(plant?.imageUrls) &&
+                        plant.imageUrls.length > 0
+                      ? plant.imageUrls[0]
+                      : null;
 
                 return (
                   <tr
-                    key={r.id}
-                    onClick={() => openDetails(r)}
-                    className="bg-white border-b border-gray-50 cursor-pointer hover:bg-gray-50"
+                    key={p.id}
+                    onClick={() => openDetails(p)}
+                    className="bg-white border-b border-gray-50 hover:bg-gray-50 cursor-pointer"
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3 min-w-0">
-                        {r.user?.photoURL ? (
+                        {user?.photoURL ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={r.user.photoURL}
+                            src={user.photoURL}
                             alt=""
                             className="h-9 w-9 rounded-full object-cover border border-black/5"
                           />
@@ -413,49 +385,57 @@ export default function HealthAssessmentsReport() {
                             {display}
                           </div>
                           <div className="text-xs text-gray-500 truncate">
-                            <span className="font-mono">{r.uid ?? "—"}</span>
+                            <span className="font-mono">{p?.uid ?? "—"}</span>
+                            {user?.email ? (
+                              <span className="ml-2">{user.email}</span>
+                            ) : null}
                           </div>
                         </div>
                       </div>
                     </td>
 
-                    <td className="px-4 py-3 text-gray-900 font-medium">
-                      {status}
-                    </td>
+                    <td className="px-4 py-3 text-gray-900">
+                      <div className="flex items-center gap-3">
+                        {thumb ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={thumb}
+                            alt=""
+                            className="h-10 w-10 rounded-lg object-cover border border-black/5"
+                          />
+                        ) : null}
 
-                    <td className="px-4 py-3 text-gray-700">
-                      {pct(r.confidence)}
-                    </td>
-
-                    <td className="px-4 py-3 text-gray-700">
-                      <div className="min-w-0">
-                        <div className="truncate">{topDisease}</div>
-                        <div className="text-xs text-gray-500 truncate">
-                          Assessment ID:{" "}
-                          <span className="font-mono">{r.id}</span>
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">
+                            {scientificName}
+                          </div>
+                          <div className="text-xs text-gray-500 truncate">
+                            Post ID: <span className="font-mono">{p.id}</span>
+                          </div>
                         </div>
                       </div>
                     </td>
 
+                    <td className="px-4 py-3">{statusPill(status)}</td>
+
+                    <td className="px-4 py-3 text-gray-700">{expert}</td>
+
                     <td className="px-4 py-3 text-gray-700">
-                      {r.createdDay ?? "—"}
+                      {p?.createdDay ?? "—"}
+                    </td>
+
+                    <td className="px-4 py-3 text-gray-700">
+                      <div className="line-clamp-2">{address}</div>
                     </td>
 
                     <td className="px-4 py-3 text-gray-700">
                       {lat != null && lon != null ? (
                         <div className="space-y-1">
                           <div className="text-xs text-gray-500">
-                            {formatLatLon(lat, lon)}
+                            {formatLatLon(Number(lat), Number(lon))}
                           </div>
-
-                          <div className="text-sm text-gray-800 line-clamp-2">
-                            {r.addressText ??
-                              addrMap[r.id] ??
-                              "Fetching address..."}
-                          </div>
-
                           <a
-                            href={mapsLink(lat, lon)}
+                            href={mapsLink(Number(lat), Number(lon))}
                             target="_blank"
                             rel="noreferrer"
                             className="text-xs text-blue-600 hover:underline"
@@ -502,11 +482,8 @@ export default function HealthAssessmentsReport() {
         </div>
       ) : null}
 
-      <HealthAssessmentDetailsModal
-        open={open}
-        assessment={selected}
-        onClose={closeDetails}
-      />
+      {/*  Modal */}
+      <MapPostDetailsModal open={open} post={selected} onClose={closeDetails} />
     </div>
   );
 }

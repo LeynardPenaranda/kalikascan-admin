@@ -1,16 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import PlantScanDetailsModal, {
+  PlantScanRow,
+} from "@/src/components/modals/PlantScanDetailsModal";
+import { exportPlantScansToExcelCsv } from "@/src/utils/exportPlantScansToExcelCsv";
 import { FileDown, RotateCcw } from "lucide-react";
-import HealthAssessmentDetailsModal, {
-  HealthAssessmentRow,
-} from "@/src/components/modals/HealthAssessmentDetailsModal";
-import { exportHealthAssessmentsToExcelCsv } from "@/src/utils/exportHealthAssessmentsToExcelCsv";
 
 const PAGE_SIZE = 10;
 
-function pct(n: number | null | undefined) {
-  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
+function pct(n: number | null) {
+  if (n == null) return "—";
   return `${Math.round(n * 100)}%`;
 }
 
@@ -34,29 +34,30 @@ function initials(s?: string | null) {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-export default function HealthAssessmentsReport() {
+export default function PlantScansReport() {
   const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState<HealthAssessmentRow[]>([]);
+  const [rows, setRows] = useState<PlantScanRow[]>([]);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
 
   const [addrMap, setAddrMap] = useState<Record<string, string>>({});
 
   const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState<HealthAssessmentRow | null>(null);
+  const [selected, setSelected] = useState<PlantScanRow | null>(null);
 
   const [downloading, setDownloading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadHealth = useCallback(async () => {
+  // ✅ Reusable loader (used on mount + refresh button)
+  const loadScans = useCallback(async () => {
     setRefreshing(true);
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/health-assessments", {
+      const res = await fetch("/api/admin/plant-scans", {
         cache: "no-store",
       });
       const data = await res.json();
-      setRows(Array.isArray(data?.assessments) ? data.assessments : []);
+      setRows(Array.isArray(data?.scans) ? data.scans : []);
       setPage(1);
     } finally {
       setRefreshing(false);
@@ -64,19 +65,21 @@ export default function HealthAssessmentsReport() {
     }
   }, []);
 
+  // initial load
   useEffect(() => {
-    loadHealth();
-  }, [loadHealth]);
+    loadScans();
+  }, [loadScans]);
 
+  // reset page when search changes
   useEffect(() => setPage(1), [q]);
 
-  // ✅ Reverse geocode missing addresses (same pattern as PlantScans)
+  // reverse geocode missing addresses (same as yours)
   useEffect(() => {
     const missing = rows.filter(
       (r) =>
         !r.addressText &&
-        r.location?.latitude != null &&
-        r.location?.longitude != null &&
+        r.latitude != null &&
+        r.longitude != null &&
         !addrMap[r.id],
     );
 
@@ -89,10 +92,9 @@ export default function HealthAssessmentsReport() {
 
       for (const r of batch) {
         try {
-          const lat = r.location!.latitude!;
-          const lon = r.location!.longitude!;
-
-          const res = await fetch(`/api/geocode/reverse?lat=${lat}&lon=${lon}`);
+          const res = await fetch(
+            `/api/geocode/reverse?lat=${r.latitude}&lon=${r.longitude}`,
+          );
           const data = await res.json();
 
           if (cancelled) return;
@@ -100,15 +102,10 @@ export default function HealthAssessmentsReport() {
           if (data?.address) {
             setAddrMap((m) => ({ ...m, [r.id]: data.address }));
 
-            // persist back to your db
-            await fetch("/api/admin/health-assessments/set-address", {
+            await fetch("/api/admin/plant-scans/set-address", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                assessmentId: r.id,
-                uid: r.uid,
-                addressText: data.address,
-              }),
+              body: JSON.stringify({ scanId: r.id, addressText: data.address }),
             });
 
             setRows((prev) =>
@@ -136,27 +133,15 @@ export default function HealthAssessmentsReport() {
     return rows.filter((r) => {
       const userText =
         r.user?.displayName || r.user?.username || r.user?.email || r.uid || "";
+      const plant = r.plantName || r.topSuggestion?.name || "";
       const day = r.createdDay || "";
       const addr = r.addressText || "";
 
-      const status =
-        r.isHealthyBinary == null
-          ? ""
-          : r.isHealthyBinary
-            ? "healthy"
-            : "unhealthy";
-
-      const topDisease =
-        r.diseaseName ||
-        r.topDisease?.name ||
-        r.topDisease?.details?.local_name;
-
       return (
         userText.toLowerCase().includes(s) ||
+        plant.toLowerCase().includes(s) ||
         day.toLowerCase().includes(s) ||
-        addr.toLowerCase().includes(s) ||
-        status.includes(s) ||
-        (topDisease ?? "").toLowerCase().includes(s)
+        addr.toLowerCase().includes(s)
       );
     });
   }, [rows, q]);
@@ -164,6 +149,7 @@ export default function HealthAssessmentsReport() {
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // ✅ Keep page in bounds
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
@@ -183,7 +169,7 @@ export default function HealthAssessmentsReport() {
     setPage((p) => Math.min(totalPages, p + 1));
   }
 
-  function openDetails(r: HealthAssessmentRow) {
+  function openDetails(r: PlantScanRow) {
     setSelected(r);
     setOpen(true);
   }
@@ -195,26 +181,24 @@ export default function HealthAssessmentsReport() {
   async function onDownload() {
     try {
       setDownloading(true);
-      exportHealthAssessmentsToExcelCsv(filtered);
+      exportPlantScansToExcelCsv(filtered);
     } finally {
       setDownloading(false);
     }
   }
 
   return (
-    <div className="w-full h-full overflow-hidden flex flex-col mt-5 ">
-      {/* Top bar */}
+    <div className="w-full h-full overflow-hidden flex flex-col">
+      {/* Top bar (like AdminsTable) */}
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="text-xs text-gray-500">
           {loading ? (
             <>
-              Showing <span className="font-medium text-gray-700">0</span>{" "}
-              assessments
+              Showing <span className="font-medium text-gray-700">0</span> scans
             </>
           ) : total === 0 ? (
             <>
-              Showing <span className="font-medium text-gray-700">0</span>{" "}
-              assessments
+              Showing <span className="font-medium text-gray-700">0</span> scans
             </>
           ) : (
             <>
@@ -225,7 +209,6 @@ export default function HealthAssessmentsReport() {
               of <span className="font-medium text-gray-700">{total}</span>
             </>
           )}
-
           {q.trim() ? (
             <span className="ml-2 text-gray-400">
               (filtered by “{q.trim()}”)
@@ -238,8 +221,8 @@ export default function HealthAssessmentsReport() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search user, status, disease, date, address..."
-              className="w-[360px] max-w-full text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none bg-white transition"
+              placeholder="Search user, plant, date, address..."
+              className="w-[340px] max-w-full text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none bg-white transition"
             />
           </div>
 
@@ -254,9 +237,10 @@ export default function HealthAssessmentsReport() {
             </button>
           ) : null}
 
+          {/* 🔄 Refresh (icon) */}
           <button
             type="button"
-            onClick={loadHealth}
+            onClick={loadScans}
             disabled={refreshing}
             className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-white hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
             title="Refresh data"
@@ -265,17 +249,23 @@ export default function HealthAssessmentsReport() {
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
 
+          {/* Download */}
           <button
             type="button"
             onClick={onDownload}
             disabled={loading || downloading || total === 0}
             className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-app-button text-white hover:bg-app-buttonHover active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-            title={total === 0 ? "No records to export" : "Download CSV"}
+            title={
+              total === 0
+                ? "No records to export"
+                : "Download the current results to CSV"
+            }
           >
             <FileDown size={14} />
-            {downloading ? "Preparing..." : "Download Health Report.csv"}
+            {downloading ? "Preparing..." : "Download Plant Report.csv"}
           </button>
 
+          {/* Pagination controls (top, like AdminsTable) */}
           <button
             type="button"
             onClick={goPrev}
@@ -301,12 +291,12 @@ export default function HealthAssessmentsReport() {
         </div>
       </div>
 
-      {/* Mobile search row */}
+      {/* Mobile search row (like AdminsTable pattern) */}
       <div className="sm:hidden mb-3 flex items-center gap-2">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search health assessments..."
+          placeholder="Search scans..."
           className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-xs outline-none bg-white transition"
         />
         {q.trim() ? (
@@ -320,21 +310,19 @@ export default function HealthAssessmentsReport() {
         ) : null}
       </div>
 
-      {/* Table */}
+      {/* table */}
       <div className="flex-1 min-h-0 overflow-auto rounded-xl border border-gray-100 bg-white">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-white z-10">
             <tr className="text-left border-b border-gray-100">
               <th className="px-4 py-3 font-medium text-gray-600">
-                Assessed By
+                Scanned By
               </th>
-              <th className="px-4 py-3 font-medium text-gray-600">Result</th>
+              <th className="px-4 py-3 font-medium text-gray-600">Plant</th>
               <th className="px-4 py-3 font-medium text-gray-600">
                 Confidence
               </th>
-              <th className="px-4 py-3 font-medium text-gray-600">
-                Top Disease
-              </th>
+              <th className="px-4 py-3 font-medium text-gray-600">Is Plant</th>
               <th className="px-4 py-3 font-medium text-gray-600">
                 Captured In
               </th>
@@ -358,9 +346,7 @@ export default function HealthAssessmentsReport() {
                   colSpan={6}
                   className="px-4 py-10 text-center text-gray-500"
                 >
-                  {q.trim()
-                    ? "No matching health assessments found."
-                    : "No health assessments found."}
+                  {q.trim() ? "No matching scans found." : "No scans found."}
                 </td>
               </tr>
             ) : (
@@ -370,22 +356,6 @@ export default function HealthAssessmentsReport() {
                   r.user?.username ||
                   r.user?.email ||
                   "Unknown user";
-
-                const lat = r.location?.latitude ?? null;
-                const lon = r.location?.longitude ?? null;
-
-                const status =
-                  r.isHealthyBinary == null
-                    ? "—"
-                    : r.isHealthyBinary
-                      ? "Healthy 🌿"
-                      : "Unhealthy 🩺";
-
-                const topDisease =
-                  r.diseaseName ||
-                  r.topDisease?.details?.local_name ||
-                  r.topDisease?.name ||
-                  "—";
 
                 return (
                   <tr
@@ -419,8 +389,26 @@ export default function HealthAssessmentsReport() {
                       </div>
                     </td>
 
-                    <td className="px-4 py-3 text-gray-900 font-medium">
-                      {status}
+                    <td className="px-4 py-3 text-gray-900">
+                      <div className="flex items-center gap-3">
+                        {r.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={r.imageUrl}
+                            alt=""
+                            className="h-10 w-10 rounded-lg object-cover border border-black/5"
+                          />
+                        ) : null}
+
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">
+                            {r.topSuggestion?.name ?? r.plantName ?? "—"}
+                          </div>
+                          <div className="text-xs text-gray-500 truncate">
+                            Scan ID: <span className="font-mono">{r.id}</span>
+                          </div>
+                        </div>
+                      </div>
                     </td>
 
                     <td className="px-4 py-3 text-gray-700">
@@ -428,13 +416,11 @@ export default function HealthAssessmentsReport() {
                     </td>
 
                     <td className="px-4 py-3 text-gray-700">
-                      <div className="min-w-0">
-                        <div className="truncate">{topDisease}</div>
-                        <div className="text-xs text-gray-500 truncate">
-                          Assessment ID:{" "}
-                          <span className="font-mono">{r.id}</span>
-                        </div>
-                      </div>
+                      {r.isPlantBinary == null
+                        ? "—"
+                        : r.isPlantBinary
+                          ? `Yes (${pct(r.isPlantProbability)})`
+                          : `No (${pct(r.isPlantProbability)})`}
                     </td>
 
                     <td className="px-4 py-3 text-gray-700">
@@ -442,10 +428,10 @@ export default function HealthAssessmentsReport() {
                     </td>
 
                     <td className="px-4 py-3 text-gray-700">
-                      {lat != null && lon != null ? (
+                      {r.latitude != null && r.longitude != null ? (
                         <div className="space-y-1">
                           <div className="text-xs text-gray-500">
-                            {formatLatLon(lat, lon)}
+                            {formatLatLon(r.latitude, r.longitude)}
                           </div>
 
                           <div className="text-sm text-gray-800 line-clamp-2">
@@ -455,7 +441,7 @@ export default function HealthAssessmentsReport() {
                           </div>
 
                           <a
-                            href={mapsLink(lat, lon)}
+                            href={mapsLink(r.latitude, r.longitude)}
                             target="_blank"
                             rel="noreferrer"
                             className="text-xs text-blue-600 hover:underline"
@@ -476,7 +462,7 @@ export default function HealthAssessmentsReport() {
         </table>
       </div>
 
-      {/* Bottom pagination */}
+      {/* Bottom pagination (optional; keep if you like) */}
       {total > PAGE_SIZE ? (
         <div className="mt-3 flex items-center justify-end gap-2">
           <button
@@ -502,9 +488,9 @@ export default function HealthAssessmentsReport() {
         </div>
       ) : null}
 
-      <HealthAssessmentDetailsModal
+      <PlantScanDetailsModal
         open={open}
-        assessment={selected}
+        scan={selected}
         onClose={closeDetails}
       />
     </div>

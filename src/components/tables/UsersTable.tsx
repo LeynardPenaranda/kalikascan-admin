@@ -36,10 +36,25 @@ function initials(nameOrEmail?: string | null) {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-function roleBadge(role: AppUserRole) {
-  return role === "expert"
-    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-    : "bg-gray-50 text-gray-700 border-gray-200";
+/**
+ * ✅ Role badge classes (shape only)
+ * Colors for "expert" will be applied via inline style to support #1DA1F2
+ */
+function roleBadgeBase() {
+  return "inline-flex items-center px-2 py-1 rounded-full border text-xs";
+}
+
+/** ✅ expert color style: #1DA1F2 */
+function expertRoleStyle() {
+  return {
+    color: "#1DA1F2",
+    borderColor: "rgba(29, 161, 242, 0.35)",
+    backgroundColor: "rgba(29, 161, 242, 0.10)",
+  } as const;
+}
+
+function regularRoleClass() {
+  return "bg-gray-50 text-gray-700 border-gray-200";
 }
 
 function statusBadge(banned: boolean) {
@@ -67,12 +82,12 @@ export default function UsersTable({
 }) {
   const [page, setPage] = useState(1);
 
-  //  delete modal state
+  // delete modal state
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AppUserRow | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  //  row-level busy state (for disabling dropdown while acting)
+  // row-level busy state (for disabling dropdown while acting)
   const [busyUid, setBusyUid] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<
     "change_role" | "toggle_ban" | "delete" | null
@@ -95,7 +110,6 @@ export default function UsersTable({
     setDeleteLoading(true);
 
     try {
-      //  no alerts here; parent can show toast if you want
       await Promise.resolve(onDeleteUser(u));
       setDeleteOpen(false);
       setDeleteTarget(null);
@@ -118,11 +132,10 @@ export default function UsersTable({
   }
 
   function handleOpenBan(u: AppUserRow) {
-    // ban/unban is handled by your own modal; just open it
     onOpenBanModal(u);
   }
 
-  //  reset to page 1 when list changes (search/refresh)
+  // reset to page 1 when list changes (search/refresh)
   useEffect(() => {
     setPage(1);
   }, [users]);
@@ -330,9 +343,12 @@ export default function UsersTable({
                     {/* Role */}
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex items-center px-2 py-1 rounded-full border text-xs ${roleBadge(
-                          u.role,
-                        )}`}
+                        className={`${roleBadgeBase()} ${
+                          u.role === "regular" ? regularRoleClass() : ""
+                        }`}
+                        style={
+                          u.role === "expert" ? expertRoleStyle() : undefined
+                        }
                       >
                         {u.role}
                       </span>
@@ -414,7 +430,7 @@ export default function UsersTable({
         </div>
       ) : null}
 
-      {/*  Delete confirmation modal */}
+      {/* Delete confirmation modal */}
       <DeleteUserModal
         open={deleteOpen}
         user={deleteTarget}
