@@ -163,13 +163,17 @@ export default function AdminLoginCard({ onSuccess }: Props) {
             height={70}
           />
           <Image src={"/cas-logo.png"} alt="cas-logo" width={70} height={70} />
+          <Image
+            src={"/coed-logo.png"}
+            alt="coed-logo"
+            width={70}
+            height={70}
+          />
         </div>
         <p className="text-xs text-center">
           <span className="font-semibold text-gray-800">
-            Environmental Sustainability Research and Development Center (ESRDC)
+            SSU – ESRDC - CAS - COED
           </span>
-          <br />
-          SSU – College of Arts and Sciences
         </p>
 
         <h1 className="text-2xl font-semibold tracking-tight text-app-button">
