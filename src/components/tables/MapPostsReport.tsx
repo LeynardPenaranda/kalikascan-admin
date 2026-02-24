@@ -1,14 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileDown, RotateCcw } from "lucide-react";
+import { FileDown, RotateCcw, Trash2 } from "lucide-react";
 import {
   deriveVerifyStatus,
   exportMapPostsToExcelCsv,
   type VerifyStatus,
 } from "@/src/utils/exportMapPostsToExcelCsv";
-
 import MapPostDetailsModal from "@/src/components/modals/MapPostDetailsModal";
+import DeleteConfirmModal from "@/src/components/modals/DeleteConfirmModal";
+import { useToast } from "@/src/hooks/useToast";
+import { auth } from "@/src/lib/firebase/client";
 
 const PAGE_SIZE = 10;
 
@@ -52,6 +54,8 @@ function statusPill(status: VerifyStatus) {
 }
 
 export default function MapPostsReport() {
+  const { showToast } = useToast();
+
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<any[]>([]);
   const [q, setQ] = useState("");
@@ -60,9 +64,19 @@ export default function MapPostsReport() {
   const [downloading, setDownloading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  //  Modal state
+  // Details modal state
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<any | null>(null);
+
+  // Delete state
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  //  Delete confirm modal state (your DeleteConfirmModal)
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    label?: string;
+  } | null>(null);
 
   const loadPosts = useCallback(async () => {
     setRefreshing(true);
@@ -95,6 +109,7 @@ export default function MapPostsReport() {
 
       const plant = p?.plant?.scientificName || p?.topSuggestion?.name || "";
       const day = p?.createdDay || "";
+
       const address =
         p?.detailedAddress ||
         p?.addressText ||
@@ -149,8 +164,92 @@ export default function MapPostsReport() {
     try {
       setDownloading(true);
       exportMapPostsToExcelCsv(filtered);
+
+      showToast({
+        type: "success",
+        message: "Download started",
+        description: `Exported ${filtered.length} map post(s).`,
+      });
     } finally {
       setDownloading(false);
+    }
+  }
+
+  //  open your delete confirm modal instead of window.confirm
+  function askDeletePost(p: any) {
+    const plant = p?.plant ?? {};
+    const top = p?.topSuggestion ?? plant?.topSuggestion ?? {};
+    const scientificName =
+      plant?.scientificName || top?.name || p?.plantName || "Map Post";
+
+    setPendingDelete({
+      id: p.id,
+      label: scientificName,
+    });
+    setDeleteOpen(true);
+  }
+
+  async function doDeletePost(postId: string) {
+    try {
+      setDeletingId(postId);
+
+      const user = auth.currentUser;
+      const idToken = user ? await user.getIdToken() : null;
+
+      if (!idToken) {
+        showToast({
+          type: "danger",
+          message: "Missing auth token",
+          description: "Please login again.",
+        });
+        return;
+      }
+
+      const res = await fetch("/api/admin/map-posts/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ postId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        showToast({
+          type: "danger",
+          message: "Delete failed",
+          description: data?.error ?? "Unable to delete this map post.",
+        });
+        return;
+      }
+
+      //  close details modal if deleting the one currently open
+      setOpen((wasOpen) => {
+        if (wasOpen && selected?.id === postId) {
+          setSelected(null);
+          return false;
+        }
+        return wasOpen;
+      });
+
+      //  remove from table instantly
+      setRows((prev) => prev.filter((x) => x.id !== postId));
+
+      showToast({
+        type: "success",
+        message: "Map post deleted",
+        description: `Deleted ID: ${postId}`,
+      });
+    } catch (e: any) {
+      showToast({
+        type: "danger",
+        message: "Delete failed",
+        description: e?.message ?? "Something went wrong.",
+      });
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -288,6 +387,9 @@ export default function MapPostsReport() {
               </th>
               <th className="px-4 py-3 font-medium text-gray-600">Address</th>
               <th className="px-4 py-3 font-medium text-gray-600">Location</th>
+              <th className="px-4 py-3 font-medium text-gray-600 text-right">
+                Actions
+              </th>
             </tr>
           </thead>
 
@@ -295,7 +397,7 @@ export default function MapPostsReport() {
             {loading ? (
               <tr className="bg-white">
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="px-4 py-10 text-center text-gray-500"
                 >
                   Loading...
@@ -304,7 +406,7 @@ export default function MapPostsReport() {
             ) : total === 0 ? (
               <tr className="bg-white">
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="px-4 py-10 text-center text-gray-500"
                 >
                   {q.trim() ? "No matching posts found." : "No posts found."}
@@ -358,6 +460,8 @@ export default function MapPostsReport() {
                         plant.imageUrls.length > 0
                       ? plant.imageUrls[0]
                       : null;
+
+                const isDeleting = deletingId === p.id;
 
                 return (
                   <tr
@@ -417,7 +521,6 @@ export default function MapPostsReport() {
                     </td>
 
                     <td className="px-4 py-3">{statusPill(status)}</td>
-
                     <td className="px-4 py-3 text-gray-700">{expert}</td>
 
                     <td className="px-4 py-3 text-gray-700">
@@ -447,6 +550,23 @@ export default function MapPostsReport() {
                       ) : (
                         "—"
                       )}
+                    </td>
+
+                    {/*  Actions */}
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation(); //  don’t open modal
+                          askDeletePost(p);
+                        }}
+                        disabled={isDeleting}
+                        className="inline-flex items-center gap-2 text-xs rounded-lg border border-red-200 px-3 py-2 bg-red-50 text-red-700 hover:bg-red-100 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Delete this post"
+                      >
+                        <Trash2 size={14} />
+                        {isDeleting ? "Deleting..." : "Delete"}
+                      </button>
                     </td>
                   </tr>
                 );
@@ -482,7 +602,39 @@ export default function MapPostsReport() {
         </div>
       ) : null}
 
-      {/*  Modal */}
+      {/*  Delete confirm modal (reusable) */}
+      <DeleteConfirmModal
+        open={deleteOpen}
+        title="Delete this map post?"
+        message={
+          "This will permanently delete the map post.\nThis cannot be undone."
+        }
+        itemLabelText={pendingDelete?.label}
+        itemIdText={
+          pendingDelete?.id ? `Post ID: ${pendingDelete.id}` : undefined
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        loading={!!(pendingDelete?.id && deletingId === pendingDelete.id)}
+        lockWhileLoading={true}
+        onClose={() => {
+          if (deletingId) return;
+          setDeleteOpen(false);
+          setPendingDelete(null);
+        }}
+        onConfirm={async () => {
+          if (!pendingDelete?.id) return;
+          const id = pendingDelete.id;
+
+          // close modal first for snappy UX
+          setDeleteOpen(false);
+          setPendingDelete(null);
+
+          await doDeletePost(id);
+        }}
+      />
+
+      {/* Details modal */}
       <MapPostDetailsModal open={open} post={selected} onClose={closeDetails} />
     </div>
   );

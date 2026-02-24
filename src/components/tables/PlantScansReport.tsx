@@ -5,7 +5,11 @@ import PlantScanDetailsModal, {
   PlantScanRow,
 } from "@/src/components/modals/PlantScanDetailsModal";
 import { exportPlantScansToExcelCsv } from "@/src/utils/exportPlantScansToExcelCsv";
-import { FileDown, RotateCcw } from "lucide-react";
+import { FileDown, RotateCcw, Trash2 } from "lucide-react";
+import { auth } from "@/src/lib/firebase/client";
+
+import DeleteConfirmModal from "@/src/components/modals/DeleteConfirmModal";
+import { useToast } from "@/src/hooks/useToast";
 
 const PAGE_SIZE = 10;
 
@@ -35,6 +39,8 @@ function initials(s?: string | null) {
 }
 
 export default function PlantScansReport() {
+  const { showToast } = useToast();
+
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<PlantScanRow[]>([]);
   const [q, setQ] = useState("");
@@ -48,14 +54,21 @@ export default function PlantScansReport() {
   const [downloading, setDownloading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // ✅ Reusable loader (used on mount + refresh button)
+  // ✅ per-row delete loading
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // ✅ delete modal state (reusable)
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    label?: string;
+  } | null>(null);
+
   const loadScans = useCallback(async () => {
     setRefreshing(true);
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/plant-scans", {
-        cache: "no-store",
-      });
+      const res = await fetch("/api/admin/plant-scans", { cache: "no-store" });
       const data = await res.json();
       setRows(Array.isArray(data?.scans) ? data.scans : []);
       setPage(1);
@@ -65,15 +78,13 @@ export default function PlantScansReport() {
     }
   }, []);
 
-  // initial load
   useEffect(() => {
     loadScans();
   }, [loadScans]);
 
-  // reset page when search changes
   useEffect(() => setPage(1), [q]);
 
-  // reverse geocode missing addresses (same as yours)
+  // reverse geocode missing addresses
   useEffect(() => {
     const missing = rows.filter(
       (r) =>
@@ -149,7 +160,6 @@ export default function PlantScansReport() {
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // ✅ Keep page in bounds
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
@@ -187,9 +197,114 @@ export default function PlantScansReport() {
     }
   }
 
+  // ✅ open delete modal (instead of window.confirm)
+  function askDelete(r: PlantScanRow) {
+    const label =
+      r.topSuggestion?.name ??
+      r.plantName ??
+      r.user?.displayName ??
+      r.user?.email ??
+      r.uid ??
+      "Plant Scan";
+    setPendingDelete({ id: r.id, label: String(label) });
+    setDeleteOpen(true);
+  }
+
+  async function onDeleteScan(scanId: string) {
+    try {
+      setDeletingId(scanId);
+
+      const user = auth.currentUser;
+      const idToken = user ? await user.getIdToken() : null;
+
+      if (!idToken) {
+        showToast({
+          type: "danger",
+          message: "Missing auth token",
+          description: "Please login again.",
+        });
+        return;
+      }
+
+      const res = await fetch("/api/admin/plant-scans/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ scanId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        showToast({
+          type: "danger",
+          message: "Delete failed",
+          description: data?.error ?? "Could not delete this scan.",
+        });
+        return;
+      }
+
+      // ✅ close details modal if deleting the one currently open
+      setOpen((wasOpen) => {
+        if (wasOpen && selected?.id === scanId) {
+          setSelected(null);
+          return false;
+        }
+        return wasOpen;
+      });
+
+      // ✅ remove from table instantly
+      setRows((prev) => prev.filter((x) => x.id !== scanId));
+
+      // ✅ success toast
+      showToast({
+        type: "success",
+        message: "Deleted successfully",
+        description: `Plant scan removed (ID: ${scanId}).`,
+      });
+    } catch (e: any) {
+      showToast({
+        type: "danger",
+        message: "Delete failed",
+        description: e?.message ?? "Unexpected error.",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  const pendingId = pendingDelete?.id ?? null;
+  const modalLoading = !!pendingId && deletingId === pendingId;
+
   return (
     <div className="w-full h-full overflow-hidden flex flex-col">
-      {/* Top bar (like AdminsTable) */}
+      {/* ✅ Reusable delete confirm modal */}
+      <DeleteConfirmModal
+        open={deleteOpen}
+        title="Delete plant scan?"
+        message="This action cannot be undone."
+        itemLabelText={pendingDelete?.label}
+        itemIdText={
+          pendingDelete?.id ? `Scan ID: ${pendingDelete.id}` : undefined
+        }
+        confirmText="Delete scan"
+        loading={modalLoading}
+        onClose={() => {
+          if (modalLoading) return;
+          setDeleteOpen(false);
+          setPendingDelete(null);
+        }}
+        onConfirm={async () => {
+          if (!pendingDelete?.id) return;
+          await onDeleteScan(pendingDelete.id);
+          setDeleteOpen(false);
+          setPendingDelete(null);
+        }}
+      />
+
+      {/* Top bar */}
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="text-xs text-gray-500">
           {loading ? (
@@ -237,7 +352,6 @@ export default function PlantScansReport() {
             </button>
           ) : null}
 
-          {/* 🔄 Refresh (icon) */}
           <button
             type="button"
             onClick={loadScans}
@@ -249,7 +363,6 @@ export default function PlantScansReport() {
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
 
-          {/* Download */}
           <button
             type="button"
             onClick={onDownload}
@@ -265,7 +378,6 @@ export default function PlantScansReport() {
             {downloading ? "Preparing..." : "Download Plant Report.csv"}
           </button>
 
-          {/* Pagination controls (top, like AdminsTable) */}
           <button
             type="button"
             onClick={goPrev}
@@ -291,7 +403,7 @@ export default function PlantScansReport() {
         </div>
       </div>
 
-      {/* Mobile search row (like AdminsTable pattern) */}
+      {/* Mobile search */}
       <div className="sm:hidden mb-3 flex items-center gap-2">
         <input
           value={q}
@@ -327,6 +439,9 @@ export default function PlantScansReport() {
                 Captured In
               </th>
               <th className="px-4 py-3 font-medium text-gray-600">Location</th>
+              <th className="px-4 py-3 font-medium text-gray-600 text-right">
+                Actions
+              </th>
             </tr>
           </thead>
 
@@ -334,7 +449,7 @@ export default function PlantScansReport() {
             {loading ? (
               <tr className="bg-white">
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-10 text-center text-gray-500"
                 >
                   Loading...
@@ -343,7 +458,7 @@ export default function PlantScansReport() {
             ) : total === 0 ? (
               <tr className="bg-white">
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-10 text-center text-gray-500"
                 >
                   {q.trim() ? "No matching scans found." : "No scans found."}
@@ -356,6 +471,8 @@ export default function PlantScansReport() {
                   r.user?.username ||
                   r.user?.email ||
                   "Unknown user";
+
+                const isDeleting = deletingId === r.id;
 
                 return (
                   <tr
@@ -454,6 +571,23 @@ export default function PlantScansReport() {
                         "—"
                       )}
                     </td>
+
+                    {/* ✅ Actions */}
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          askDelete(r);
+                        }}
+                        disabled={isDeleting}
+                        className="inline-flex items-center gap-2 text-xs rounded-lg border border-red-200 px-3 py-2 bg-red-50 text-red-700 hover:bg-red-100 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Delete this scan"
+                      >
+                        <Trash2 size={14} />
+                        {isDeleting ? "Deleting..." : "Delete"}
+                      </button>
+                    </td>
                   </tr>
                 );
               })
@@ -462,7 +596,7 @@ export default function PlantScansReport() {
         </table>
       </div>
 
-      {/* Bottom pagination (optional; keep if you like) */}
+      {/* Bottom pagination */}
       {total > PAGE_SIZE ? (
         <div className="mt-3 flex items-center justify-end gap-2">
           <button

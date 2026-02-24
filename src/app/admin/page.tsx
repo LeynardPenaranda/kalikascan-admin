@@ -733,7 +733,7 @@ export default function AdminDashboard() {
               <ExternalServiceLink
                 title="Google Maps Billing"
                 desc="Manage Maps API billing and usage (Google Cloud Console)."
-                href="https://console.cloud.google.com/google/maps-apis/billing?project=project-407f4870-eabe-44a3-a43"
+                href="https://console.cloud.google.com/google/maps-apis/billing?project=project-93128398-92f3-4d6a-a8f"
                 icon={<MapPinned size={18} />}
               />
               <ExternalServiceLink
@@ -745,13 +745,13 @@ export default function AdminDashboard() {
               <ExternalServiceLink
                 title="Cloudinary Billing"
                 desc="Manage Cloudinary plans, billing, and usage."
-                href="https://console.cloudinary.com/app/c-8741ba92f988d19d39fad70e10c060/settings/billing/plans"
+                href="https://console.cloudinary.com/app/c-ff32ec489052c9e074f8700886fa5e/settings/billing/plans"
                 icon={<ImageIcon size={18} />}
               />
               <ExternalServiceLink
                 title="Plant.id (Kindwise Admin)"
                 desc="Manage Plant.id / Kindwise settings, usage, and keys."
-                href="https://admin.kindwise.com/"
+                href="https://admin.kindwise.com/api_keys"
                 icon={<Flame size={18} />}
               />
             </div>

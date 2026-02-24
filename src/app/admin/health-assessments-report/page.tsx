@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileDown, RotateCcw } from "lucide-react";
+import { FileDown, RotateCcw, Trash2 } from "lucide-react";
 import HealthAssessmentDetailsModal, {
   HealthAssessmentRow,
 } from "@/src/components/modals/HealthAssessmentDetailsModal";
 import { exportHealthAssessmentsToExcelCsv } from "@/src/utils/exportHealthAssessmentsToExcelCsv";
+import DeleteConfirmModal from "@/src/components/modals/DeleteConfirmModal";
+import { useToast } from "@/src/hooks/useToast";
+import { auth } from "@/src/lib/firebase/client";
 
 const PAGE_SIZE = 10;
 
@@ -34,7 +37,38 @@ function initials(s?: string | null) {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
+function resultPill(isHealthyBinary: boolean | null | undefined) {
+  const base =
+    "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold";
+
+  if (isHealthyBinary === true) {
+    return (
+      <span
+        className={`${base} border-emerald-200 bg-emerald-50 text-emerald-700`}
+      >
+        Healthy 🌿
+      </span>
+    );
+  }
+
+  if (isHealthyBinary === false) {
+    return (
+      <span className={`${base} border-red-200 bg-red-50 text-red-700`}>
+        Unhealthy 🩺
+      </span>
+    );
+  }
+
+  return (
+    <span className={`${base} border-gray-200 bg-gray-50 text-gray-600`}>
+      —
+    </span>
+  );
+}
+
 export default function HealthAssessmentsReport() {
+  const { showToast } = useToast();
+
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<HealthAssessmentRow[]>([]);
   const [q, setQ] = useState("");
@@ -47,6 +81,16 @@ export default function HealthAssessmentsReport() {
 
   const [downloading, setDownloading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // per-row delete loading
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // delete confirm modal
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    label?: string;
+  } | null>(null);
 
   const loadHealth = useCallback(async () => {
     setRefreshing(true);
@@ -70,7 +114,7 @@ export default function HealthAssessmentsReport() {
 
   useEffect(() => setPage(1), [q]);
 
-  // ✅ Reverse geocode missing addresses (same pattern as PlantScans)
+  // Reverse geocode missing addresses
   useEffect(() => {
     const missing = rows.filter(
       (r) =>
@@ -100,7 +144,6 @@ export default function HealthAssessmentsReport() {
           if (data?.address) {
             setAddrMap((m) => ({ ...m, [r.id]: data.address }));
 
-            // persist back to your db
             await fetch("/api/admin/health-assessments/set-address", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -149,14 +192,15 @@ export default function HealthAssessmentsReport() {
       const topDisease =
         r.diseaseName ||
         r.topDisease?.name ||
-        r.topDisease?.details?.local_name;
+        r.topDisease?.details?.local_name ||
+        "";
 
       return (
         userText.toLowerCase().includes(s) ||
         day.toLowerCase().includes(s) ||
         addr.toLowerCase().includes(s) ||
         status.includes(s) ||
-        (topDisease ?? "").toLowerCase().includes(s)
+        String(topDisease).toLowerCase().includes(s)
       );
     });
   }, [rows, q]);
@@ -183,7 +227,7 @@ export default function HealthAssessmentsReport() {
     setPage((p) => Math.min(totalPages, p + 1));
   }
 
-  function openDetails(r: HealthAssessmentRow) {
+  function openDetailsRow(r: HealthAssessmentRow) {
     setSelected(r);
     setOpen(true);
   }
@@ -196,13 +240,102 @@ export default function HealthAssessmentsReport() {
     try {
       setDownloading(true);
       exportHealthAssessmentsToExcelCsv(filtered);
+
+      showToast({
+        type: "success",
+        message: "Download started",
+        description: `Exported ${filtered.length} assessment(s).`,
+      });
     } finally {
       setDownloading(false);
     }
   }
 
+  function askDelete(r: HealthAssessmentRow) {
+    const topDisease =
+      r.diseaseName ||
+      r.topDisease?.details?.local_name ||
+      r.topDisease?.name ||
+      "";
+
+    const label = topDisease
+      ? `Top disease: ${topDisease}`
+      : r.isHealthyBinary === true
+        ? "Healthy result"
+        : r.isHealthyBinary === false
+          ? "Unhealthy result"
+          : "Health assessment";
+
+    setPendingDelete({ id: r.id, label });
+    setDeleteOpen(true);
+  }
+
+  async function doDelete(assessmentId: string) {
+    try {
+      setDeletingId(assessmentId);
+
+      const user = auth.currentUser;
+      const idToken = user ? await user.getIdToken() : null;
+
+      if (!idToken) {
+        showToast({
+          type: "danger",
+          message: "Missing auth token",
+          description: "Please login again.",
+        });
+        return;
+      }
+
+      const res = await fetch("/api/admin/health-assessments/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ assessmentId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        showToast({
+          type: "danger",
+          message: "Delete failed",
+          description: data?.error ?? "Unable to delete this assessment.",
+        });
+        return;
+      }
+
+      // close details modal if deleting currently open row
+      setOpen((wasOpen) => {
+        if (wasOpen && selected?.id === assessmentId) {
+          setSelected(null);
+          return false;
+        }
+        return wasOpen;
+      });
+
+      // remove from table instantly
+      setRows((prev) => prev.filter((x) => x.id !== assessmentId));
+
+      showToast({
+        type: "success",
+        message: "Health assessment deleted",
+        description: `Deleted ID: ${assessmentId}`,
+      });
+    } catch (e: any) {
+      showToast({
+        type: "danger",
+        message: "Delete failed",
+        description: e?.message ?? "Something went wrong.",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
-    <div className="w-full h-full overflow-hidden flex flex-col mt-5 ">
+    <div className="w-full h-full overflow-hidden flex flex-col mt-5">
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="text-xs text-gray-500">
@@ -339,6 +472,9 @@ export default function HealthAssessmentsReport() {
                 Captured In
               </th>
               <th className="px-4 py-3 font-medium text-gray-600">Location</th>
+              <th className="px-4 py-3 font-medium text-gray-600 text-right">
+                Actions
+              </th>
             </tr>
           </thead>
 
@@ -346,7 +482,7 @@ export default function HealthAssessmentsReport() {
             {loading ? (
               <tr className="bg-white">
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-10 text-center text-gray-500"
                 >
                   Loading...
@@ -355,7 +491,7 @@ export default function HealthAssessmentsReport() {
             ) : total === 0 ? (
               <tr className="bg-white">
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-10 text-center text-gray-500"
                 >
                   {q.trim()
@@ -374,23 +510,18 @@ export default function HealthAssessmentsReport() {
                 const lat = r.location?.latitude ?? null;
                 const lon = r.location?.longitude ?? null;
 
-                const status =
-                  r.isHealthyBinary == null
-                    ? "—"
-                    : r.isHealthyBinary
-                      ? "Healthy 🌿"
-                      : "Unhealthy 🩺";
-
                 const topDisease =
                   r.diseaseName ||
                   r.topDisease?.details?.local_name ||
                   r.topDisease?.name ||
                   "—";
 
+                const isDeleting = deletingId === r.id;
+
                 return (
                   <tr
                     key={r.id}
-                    onClick={() => openDetails(r)}
+                    onClick={() => openDetailsRow(r)}
                     className="bg-white border-b border-gray-50 cursor-pointer hover:bg-gray-50"
                   >
                     <td className="px-4 py-3">
@@ -419,8 +550,9 @@ export default function HealthAssessmentsReport() {
                       </div>
                     </td>
 
-                    <td className="px-4 py-3 text-gray-900 font-medium">
-                      {status}
+                    {/* ✅ colored Result pill */}
+                    <td className="px-4 py-3">
+                      {resultPill(r.isHealthyBinary)}
                     </td>
 
                     <td className="px-4 py-3 text-gray-700">
@@ -468,6 +600,23 @@ export default function HealthAssessmentsReport() {
                         "—"
                       )}
                     </td>
+
+                    {/* ✅ Actions */}
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          askDelete(r);
+                        }}
+                        disabled={isDeleting}
+                        className="inline-flex items-center gap-2 text-xs rounded-lg border border-red-200 px-3 py-2 bg-red-50 text-red-700 hover:bg-red-100 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Delete this assessment"
+                      >
+                        <Trash2 size={14} />
+                        {isDeleting ? "Deleting..." : "Delete"}
+                      </button>
+                    </td>
                   </tr>
                 );
               })
@@ -501,6 +650,37 @@ export default function HealthAssessmentsReport() {
           </button>
         </div>
       ) : null}
+
+      {/* ✅ Delete confirm modal */}
+      <DeleteConfirmModal
+        open={deleteOpen}
+        title="Delete this health assessment?"
+        message={
+          "This will permanently delete the assessment.\nThis cannot be undone."
+        }
+        itemLabelText={pendingDelete?.label}
+        itemIdText={
+          pendingDelete?.id ? `Assessment ID: ${pendingDelete.id}` : undefined
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        loading={!!(pendingDelete?.id && deletingId === pendingDelete.id)}
+        lockWhileLoading={true}
+        onClose={() => {
+          if (deletingId) return;
+          setDeleteOpen(false);
+          setPendingDelete(null);
+        }}
+        onConfirm={async () => {
+          if (!pendingDelete?.id) return;
+          const id = pendingDelete.id;
+
+          setDeleteOpen(false);
+          setPendingDelete(null);
+
+          await doDelete(id);
+        }}
+      />
 
       <HealthAssessmentDetailsModal
         open={open}
