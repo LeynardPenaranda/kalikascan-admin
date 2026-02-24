@@ -86,7 +86,7 @@ export default function AdminLoginCard({ onSuccess }: Props) {
   async function onLogin(e: React.FormEvent) {
     e.preventDefault();
 
-    if (loading) return; // ✅ prevent double submit
+    if (loading) return; //  prevent double submit
 
     setErr(null);
     setLoading(true);
@@ -103,7 +103,7 @@ export default function AdminLoginCard({ onSuccess }: Props) {
         return;
       }
 
-      // ✅ update lastSignIn in Firestore
+      //  update lastSignIn in Firestore
       await updateDoc(doc(db, "admins", cred.user.uid), {
         lastSignIn: serverTimestamp(),
       });
@@ -154,8 +154,26 @@ export default function AdminLoginCard({ onSuccess }: Props) {
   return (
     <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 space-y-6">
       <div className="text-center space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
-          Admin Panel
+        <div className="flex items-center justify-center w-full gap-5 mb-5">
+          <Image src={"/ssu-logo.png"} alt="ssu-logo" width={70} height={70} />
+          <Image
+            src={"/esrdc-logo.png"}
+            alt="esrdc-logo"
+            width={70}
+            height={70}
+          />
+          <Image src={"/cas-logo.png"} alt="cas-logo" width={70} height={70} />
+        </div>
+        <p className="text-xs text-center">
+          <span className="font-semibold text-gray-800">
+            Environmental Sustainability Research and Development Center (ESRDC)
+          </span>
+          <br />
+          SSU – College of Arts and Sciences
+        </p>
+
+        <h1 className="text-2xl font-semibold tracking-tight text-app-button">
+          KalikaScan Admin Portal
         </h1>
         <p className="text-sm text-gray-500">Sign in to continue</p>
       </div>
