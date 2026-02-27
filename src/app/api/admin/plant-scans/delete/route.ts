@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/src/lib/firebase/admin";
 import { deletePlantIdIdentification } from "@/src/lib/plantid/deleteIdentification";
+import { deleteFlorinConversation } from "@/src/lib/plantid/deleteFlorinConversation";
 
 export const runtime = "nodejs";
 
-type Body = {
-  scanId: string;
-};
+type Body = { scanId: string };
 
 export async function POST(req: Request) {
   try {
@@ -21,7 +20,6 @@ export async function POST(req: Request) {
 
     const decoded = await adminAuth.verifyIdToken(idToken);
 
-    // only admins
     if (!decoded.admin) {
       return NextResponse.json(
         { error: "Forbidden (not admin)" },
@@ -29,7 +27,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const body = (await req.json()) as Body;
+    const body = (await req.json().catch(() => ({}))) as Body;
 
     if (!body?.scanId) {
       return NextResponse.json({ error: "Missing scanId" }, { status: 400 });
@@ -45,29 +43,36 @@ export async function POST(req: Request) {
     const data = snap.data() as any;
     const uid: string | null = data?.uid ?? null;
 
-    //  try to delete plant.id identification (best-effort)
     const accessToken: string | null =
       data?.accessToken ??
       data?.plantIdAccessToken ??
       data?.plantId?.accessToken ??
       null;
 
+    // Best-effort: delete conversation
+    let convoDeleted = false;
+    let convoDeleteError: string | null = null;
+
+    try {
+      await deleteFlorinConversation(accessToken);
+      convoDeleted = !!accessToken;
+    } catch (e: any) {
+      convoDeleteError = e?.message ?? "Conversation delete failed";
+    }
+
+    // Best-effort: delete identification
     let plantIdDeleted = false;
     let plantIdDeleteError: string | null = null;
 
     try {
       await deletePlantIdIdentification(accessToken);
-      plantIdDeleted = !!accessToken; // if token existed, we attempted + ok
+      plantIdDeleted = !!accessToken;
     } catch (e: any) {
-      //  best-effort: DO NOT block Firestore deletion
-      plantIdDeleteError = e?.response?.data
-        ? JSON.stringify(e.response.data)
-        : (e?.message ?? "Plant.id delete failed");
+      plantIdDeleteError = e?.message ?? "Plant.id delete failed";
     }
 
-    //  delete Firestore global + user copy
+    // Delete Firestore docs
     const batch = adminDb.batch();
-
     batch.delete(globalRef);
 
     if (uid) {
@@ -76,7 +81,6 @@ export async function POST(req: Request) {
         .doc(uid)
         .collection("plant_scans")
         .doc(body.scanId);
-
       batch.delete(userRef);
     }
 
@@ -88,8 +92,14 @@ export async function POST(req: Request) {
       deletedFromUser: !!uid,
       plantId: {
         hadAccessToken: !!accessToken,
-        deleted: plantIdDeleted || !accessToken, // true if no token needed
-        error: plantIdDeleteError, // null if success
+        conversation: {
+          deleted: convoDeleted || !accessToken,
+          error: convoDeleteError,
+        },
+        identification: {
+          deleted: plantIdDeleted || !accessToken,
+          error: plantIdDeleteError,
+        },
       },
     });
   } catch (e: any) {

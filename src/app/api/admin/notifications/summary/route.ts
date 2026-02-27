@@ -7,15 +7,74 @@ export const dynamic = "force-dynamic";
 
 type LastSeenPayload = {
   plant_scans?: number; // ms
-  map_posts?: number; // ms
-  health_assessments?: string; // ISO
-  expert_applications?: string; // ISO
+  map_posts?: number; // ms (for map_scans createdAtLocal)
+  health_assessments?: string; // ISO (for createdAt Timestamp)
+  expert_applications?: string; // ISO (for createdAt Timestamp)
 };
 
 function isoToTs(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   return Timestamp.fromDate(d);
+}
+
+// helper: tries count by createdAtLocal first; if that returns 0, fallback to createdAt Timestamp
+async function countNewDocs(args: {
+  collection: string;
+  lastSeenMs?: number; // for createdAtLocal
+  lastSeenIso?: string; // for createdAt Timestamp
+}) {
+  const { collection, lastSeenMs, lastSeenIso } = args;
+
+  const nowMs = Date.now();
+
+  // 1) Try createdAtLocal (number ms)
+  if (typeof lastSeenMs === "number") {
+    try {
+      const snap = await adminDb
+        .collection(collection)
+        .where("createdAtLocal", ">", lastSeenMs)
+        .count()
+        .get();
+
+      const c = snap.data().count ?? 0;
+      if (c > 0) return c; // if we found something, great
+      // If 0, we still fallback because field might not exist / wrong type.
+    } catch {
+      // ignore and fallback
+    }
+  } else {
+    // if never seen, default to now so you don’t show everything as "new" on first load
+    try {
+      const snap = await adminDb
+        .collection(collection)
+        .where("createdAtLocal", ">", nowMs)
+        .count()
+        .get();
+      const c = snap.data().count ?? 0;
+      if (c > 0) return c;
+    } catch {
+      // ignore and fallback
+    }
+  }
+
+  // 2) Fallback: createdAt (Firestore Timestamp)
+  const afterTs =
+    lastSeenIso && isoToTs(lastSeenIso)
+      ? isoToTs(lastSeenIso)!
+      : Timestamp.fromDate(new Date()); // default now
+
+  try {
+    const snap = await adminDb
+      .collection(collection)
+      .where("createdAt", ">", afterTs)
+      .count()
+      .get();
+
+    return snap.data().count ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 export async function POST(req: Request) {
@@ -42,58 +101,37 @@ export async function POST(req: Request) {
     };
     const lastSeen = body?.lastSeen ?? {};
 
-    // If never seen, default to "now" so you don’t show everything as new on first load.
-    const nowMs = Date.now();
+    const plantCount = await countNewDocs({
+      collection: "plant_scans",
+      lastSeenMs: lastSeen.plant_scans,
+    });
 
-    const plantAfter =
-      typeof lastSeen.plant_scans === "number" ? lastSeen.plant_scans : nowMs;
-    const mapAfter =
-      typeof lastSeen.map_posts === "number" ? lastSeen.map_posts : nowMs;
+    const mapCount = await countNewDocs({
+      collection: "map_scans",
+      lastSeenMs: lastSeen.map_posts,
+      // if you later decide to store ISO for map_posts, this supports it too:
+      lastSeenIso: undefined,
+    });
 
-    const healthAfterTs = lastSeen.health_assessments
-      ? isoToTs(lastSeen.health_assessments)
-      : Timestamp.fromDate(new Date());
+    const healthCount = await countNewDocs({
+      collection: "health_assessments",
+      lastSeenIso: lastSeen.health_assessments,
+    });
 
-    const expertAfterTs = lastSeen.expert_applications
-      ? isoToTs(lastSeen.expert_applications)
-      : Timestamp.fromDate(new Date());
-
-    // ✅ createdAtLocal collections (number ms)
-    const plantCount = await adminDb
-      .collection("plant_scans")
-      .where("createdAtLocal", ">", plantAfter)
-      .count()
-      .get();
-
-    const mapCount = await adminDb
-      .collection("map_scans")
-      .where("createdAtLocal", ">", mapAfter)
-      .count()
-      .get();
-
-    // ✅ createdAt timestamp collections
-    // NOTE: this assumes createdAt exists and is Timestamp in all docs.
-    const healthCount = await adminDb
-      .collection("health_assessments")
-      .where("createdAt", ">", healthAfterTs!)
-      .count()
-      .get();
-
-    const expertCount = await adminDb
-      .collection("expert_applications")
-      .where("createdAt", ">", expertAfterTs!)
-      .count()
-      .get();
+    const expertCount = await countNewDocs({
+      collection: "expert_applications",
+      lastSeenIso: lastSeen.expert_applications,
+    });
 
     return NextResponse.json({
       counts: {
-        plant_scans: plantCount.data().count ?? 0,
-        map_posts: mapCount.data().count ?? 0,
-        health_assessments: healthCount.data().count ?? 0,
-        expert_applications: expertCount.data().count ?? 0,
+        plant_scans: plantCount,
+        map_posts: mapCount,
+        health_assessments: healthCount,
+        expert_applications: expertCount,
       },
       serverNow: {
-        ms: nowMs,
+        ms: Date.now(),
         iso: new Date().toISOString(),
       },
     });

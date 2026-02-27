@@ -26,6 +26,8 @@ import {
   Image as ImageIcon,
   Database,
   Download,
+  Globe,
+  Bell,
 } from "lucide-react";
 import {
   DashboardExportPayload,
@@ -736,23 +738,40 @@ export default function AdminDashboard() {
                 href="https://console.cloud.google.com/google/maps-apis/billing?project=project-93128398-92f3-4d6a-a8f"
                 icon={<MapPinned size={18} />}
               />
+
               <ExternalServiceLink
                 title="Firebase Firestore"
                 desc="Open Firestore database for KalikaScan (Console)."
                 href="https://console.firebase.google.com/u/0/project/kalikascan/firestore/databases/-default-/data/~2Fadmins~2F5mbjTS7lF8V8X4LtKixuDlqlSLn1"
                 icon={<Database size={18} />}
               />
+
               <ExternalServiceLink
                 title="Cloudinary Billing"
                 desc="Manage Cloudinary plans, billing, and usage."
                 href="https://console.cloudinary.com/app/c-ff32ec489052c9e074f8700886fa5e/settings/billing/plans"
                 icon={<ImageIcon size={18} />}
               />
+
               <ExternalServiceLink
                 title="Plant.id (Kindwise Admin)"
                 desc="Manage Plant.id / Kindwise settings, usage, and keys."
                 href="https://admin.kindwise.com/api_keys"
                 icon={<Flame size={18} />}
+              />
+
+              <ExternalServiceLink
+                title="Native Notify Dashboard"
+                desc="Manage push notifications, app settings, and user tokens."
+                href="https://app.nativenotify.com/dashboard"
+                icon={<Bell size={18} />}
+              />
+
+              <ExternalServiceLink
+                title="Vercel (Admin Hosting)"
+                desc="Manage KalikaScan Admin deployments, environment variables, and builds."
+                href="https://vercel.com/esrdcssu-4342s-projects"
+                icon={<Globe size={18} />}
               />
             </div>
 

@@ -1,4 +1,5 @@
 "use client";
+
 import PlantScansReport from "@/src/components/tables/PlantScansReport";
 import { markSeen } from "@/src/lib/adminLastSeen";
 import { useAppDispatch } from "@/src/store/hooks";
