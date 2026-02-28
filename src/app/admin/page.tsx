@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -12,6 +12,7 @@ import {
   BarChart,
   Bar,
   Legend,
+  LegendPayload,
 } from "recharts";
 import {
   Leaf,
@@ -28,6 +29,8 @@ import {
   Download,
   Globe,
   Bell,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import {
   DashboardExportPayload,
@@ -44,11 +47,9 @@ function safeNum(v: any) {
 function tsToMs(ts: any): number | null {
   if (!ts) return null;
 
-  // Admin SDK JSON can look like { _seconds, _nanoseconds } or { seconds, nanoseconds }
   const sec = ts.seconds ?? ts._seconds;
   if (typeof sec === "number") return sec * 1000;
 
-  // Some setups may stringify timestamps
   if (typeof ts === "string") {
     const d = new Date(ts);
     const ms = d.getTime();
@@ -72,6 +73,33 @@ function fmtMaybeTs(v: any) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function shortDate(dateStr: any) {
+  const s = String(dateStr ?? "");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s.slice(5); // MM-DD
+  return s;
+}
+
+/** Detect container width so we can do "small screen legend = dots only" */
+function useContainerWidth<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [w, setW] = useState(0);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const ro = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect?.width ?? 0;
+      setW(width);
+    });
+
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return { ref, w };
 }
 
 function CardShell({
@@ -206,18 +234,99 @@ function ExternalServiceLink({
   );
 }
 
+/** Legend: small => dots only; larger => dot + label */
+function CompactLegend({
+  payload,
+  compact,
+}: {
+  payload?: ReadonlyArray<LegendPayload>;
+  compact: boolean;
+}) {
+  if (!payload?.length) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {payload.map((entry) => {
+        const color = (entry as any)?.color ?? "#999";
+        const label = String((entry as any)?.value ?? "");
+
+        return (
+          <div key={label} className="flex items-center gap-1" title={label}>
+            <span
+              className="inline-block h-2.5 w-2.5 rounded-full"
+              style={{ background: color }}
+            />
+            {!compact ? (
+              <span className="text-[11px] text-gray-600">{label}</span>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ThirdPartyCredentialsNote() {
+  const [showPass, setShowPass] = useState(false);
+  const email = "esrdcssu@gmail.com";
+  const pass = "ssusrdc@dm1n123";
+
+  return (
+    <div className="mb-3 rounded-2xl border bg-amber-50 p-4 text-amber-900">
+      <div className="text-sm font-semibold">Login reminder</div>
+      <div className="mt-1 text-[12px] leading-5 text-amber-800">
+        Before using the third-party portals below, make sure you are logged in
+        with this account:
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+        <div className="rounded-xl border bg-white px-3 py-2">
+          <div className="text-[11px] font-medium text-gray-500">Email</div>
+          <div className="mt-0.5 text-sm font-semibold text-gray-900">
+            {email}
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-white px-3 py-2">
+          <div className="text-[11px] font-medium text-gray-500">Password</div>
+          <div className="mt-0.5 flex items-center justify-between gap-2">
+            <div className="min-w-0 text-sm font-semibold text-gray-900">
+              {showPass ? pass : "•".repeat(12)}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowPass((s) => !s)}
+              className="inline-flex items-center justify-center rounded-lg border bg-white p-2 text-gray-700 hover:bg-gray-50 active:scale-[0.99]"
+              aria-label={showPass ? "Hide password" : "Show password"}
+              title={showPass ? "Hide password" : "Show password"}
+            >
+              {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 text-[11px] text-amber-800">
+        ⚠️ Only share this with authorized admins.
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const [global, setGlobal] = useState<any>(null);
   const [daily, setDaily] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
-
-  // all-dates disease series
   const [diseaseSeries, setDiseaseSeries] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-
   const [downloading, setDownloading] = useState(false);
+
+  // width-based compact mode (small screens)
+  const { ref: containerRef, w } = useContainerWidth<HTMLDivElement>();
+  const compact = w > 0 && w < 448; // < 28rem (@md)
 
   async function loadAll() {
     setLoading(true);
@@ -277,7 +386,6 @@ export default function AdminDashboard() {
       totalHealthSuccess: safeNum(g.totalHealthSuccess),
       totalHealthFail: safeNum(g.totalHealthFail),
 
-      // Plant.id requests = plant scans + health assessments
       totalPlantIdRequests: totalPlantScans + totalHealthAssessments,
 
       lastPlantScanAt: g.lastPlantScanAt,
@@ -286,9 +394,7 @@ export default function AdminDashboard() {
     };
   }, [global]);
 
-  // --- Daily charts data
   const dailyChart = useMemo(() => {
-    // daily returns array of { id: "YYYY-MM-DD", ...fields }
     return daily.map((x: any) => ({
       date: x.id,
       plantScans: safeNum(x.plantScans),
@@ -297,7 +403,6 @@ export default function AdminDashboard() {
     }));
   }, [daily]);
 
-  // Plant.id requests (stacked bar)
   const plantIdRequestsChart = useMemo(() => {
     return dailyChart.map((d) => ({
       date: d.date,
@@ -307,7 +412,6 @@ export default function AdminDashboard() {
     }));
   }, [dailyChart]);
 
-  // Users lastActive (chart + scrollable list, newest on top)
   const usersLastActive = useMemo(() => {
     const now = Date.now();
 
@@ -320,7 +424,7 @@ export default function AdminDashboard() {
 
       return {
         key: String(u.uid ?? fullName),
-        name: fullName.slice(0, 14),
+        name: fullName.slice(0, compact ? 8 : 14),
         fullName,
         email: u.email ?? null,
         hoursAgo: hoursAgo ?? 0,
@@ -337,9 +441,8 @@ export default function AdminDashboard() {
       };
     });
 
-    // newest on top
     return mapped.sort((a, b) => b.lastActiveMs - a.lastActiveMs);
-  }, [users]);
+  }, [users, compact]);
 
   const canDownload = !loading && !err;
 
@@ -392,13 +495,15 @@ export default function AdminDashboard() {
     } catch (e) {
       console.error(e);
     } finally {
-      // small delay so browser can start downloads before button flips back
       setTimeout(() => setDownloading(false), 350);
     }
   }
 
   return (
-    <div className="min-h-screen w-full bg-gray-50">
+    <div
+      ref={containerRef}
+      className="min-h-screen w-full bg-gray-50 @container"
+    >
       <div className="w-full px-4 py-4 md:px-6 md:py-6">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -459,7 +564,7 @@ export default function AdminDashboard() {
           </div>
         ) : null}
 
-        {/* TOP CARDS - fully responsive auto-fit */}
+        {/* TOP CARDS - keep all cards */}
         <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
           {loading ? (
             <>
@@ -474,7 +579,7 @@ export default function AdminDashboard() {
               <StatCard
                 label="Total Plant Scans"
                 value={topCards.totalPlantScans}
-                sub={`Success: ${topCards.totalPlantScanSuccess} • Fail: ${topCards.totalPlantScanFail}`}
+                sub={`Plants: ${topCards.totalPlantScanSuccess} • notPlants: ${topCards.totalPlantScanFail}`}
                 icon={<Leaf size={20} />}
               />
               <StatCard
@@ -485,13 +590,13 @@ export default function AdminDashboard() {
               <StatCard
                 label="Health Assessments"
                 value={topCards.totalHealthAssessments}
-                sub={`Success: ${topCards.totalHealthSuccess} • Fail: ${topCards.totalHealthFail}`}
+                sub={`Plants: ${topCards.totalHealthSuccess} • notPlants: ${topCards.totalHealthFail}`}
                 icon={<ActivityIcon size={20} />}
               />
               <StatCard
                 label="Plant.id Requests"
                 value={topCards.totalPlantIdRequests}
-                sub="Plant scans + health"
+                sub="Scans + health"
                 icon={<Server size={20} />}
               />
               <StatCard
@@ -517,11 +622,21 @@ export default function AdminDashboard() {
               <ResponsiveContainer>
                 <AreaChart
                   data={dailyChart}
-                  margin={{ top: 10, right: 20, left: 0, bottom: 0 }}
+                  margin={{
+                    top: 10,
+                    right: compact ? 6 : 20,
+                    left: compact ? -10 : 0,
+                    bottom: 0,
+                  }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tickMargin={8} minTickGap={16} />
-                  <YAxis width={40} />
+                  <XAxis
+                    dataKey="date"
+                    tickMargin={8}
+                    minTickGap={compact ? 24 : 16}
+                    tickFormatter={(v) => (compact ? shortDate(v) : String(v))}
+                  />
+                  <YAxis width={compact ? 34 : 40} />
                   <Tooltip />
                   <Area
                     type="monotone"
@@ -552,74 +667,102 @@ export default function AdminDashboard() {
             </div>
           </CardShell>
 
-          <CardShell title="Plant.id Requests (Daily)" right="Plant + Health">
+          <CardShell title="Plant.id Requests (Daily)" right="Scans + Health">
             <div className="h-[280px] w-full">
               <ResponsiveContainer>
                 <BarChart
                   data={plantIdRequestsChart}
-                  margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+                  margin={{
+                    top: 10,
+                    right: compact ? 6 : 20,
+                    left: compact ? -10 : 0,
+                    bottom: 10,
+                  }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tickMargin={8} minTickGap={16} />
-                  <YAxis width={40} />
+                  <XAxis
+                    dataKey="date"
+                    tickMargin={8}
+                    minTickGap={compact ? 24 : 16}
+                    tickFormatter={(v) => (compact ? shortDate(v) : String(v))}
+                  />
+                  <YAxis width={compact ? 34 : 40} />
                   <Tooltip
                     formatter={(value: any, name: any) => {
+                      // ✅ remove plant/plants wording here too
                       if (name === "plantScans")
-                        return [value, "Plant scans (Plant.id)"];
+                        return [value, "Scans (Plant.id)"];
                       if (name === "healthAssessments")
-                        return [value, "Health assessments (Plant.id)"];
+                        return [value, "Health (Plant.id)"];
                       return [value, String(name)];
                     }}
                     labelFormatter={(label) => `Date: ${label}`}
                   />
-                  <Legend />
+
+                  {/* ✅ small screen legend = colors only */}
+                  <Legend
+                    content={(props) => (
+                      <CompactLegend {...props} compact={compact} />
+                    )}
+                  />
+
                   <Bar
                     dataKey="plantScans"
                     stackId="a"
                     fill="#16a34a"
                     radius={[8, 8, 0, 0]}
-                    name="Plant scans"
+                    name="Scans"
                   />
                   <Bar
                     dataKey="healthAssessments"
                     stackId="a"
                     fill="#9333ea"
                     radius={[8, 8, 0, 0]}
-                    name="Health assessments"
+                    name="Health"
                   />
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
             <div className="mt-2 text-[11px] text-gray-500">
-              Total per day = Plant scans + Health assessments
+              Total per day = Scans + Health
             </div>
           </CardShell>
         </div>
 
         {/* ROW 2 */}
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {/* Users Activity stays side-by-side: chart left + scroll list right */}
           <CardShell title="Users Activity (Last Active)">
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
-              {/* Chart */}
               <div className="lg:col-span-3">
                 <div className="h-[260px] w-full">
                   <ResponsiveContainer>
                     <BarChart
                       data={usersLastActive}
-                      margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+                      margin={{
+                        top: 10,
+                        right: compact ? 6 : 20,
+                        left: compact ? -10 : 0,
+                        bottom: 10,
+                      }}
                     >
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="name" tickMargin={8} />
-                      <YAxis width={50} />
+                      <YAxis width={compact ? 42 : 50} />
                       <Tooltip
                         formatter={(val: any) => [
                           `${val} hour(s) ago`,
                           "Last active",
                         ]}
                       />
-                      <Legend />
+
+                      {/* ✅ small screen legend = colors only */}
+                      <Legend
+                        content={(props) => (
+                          <CompactLegend {...props} compact={compact} />
+                        )}
+                      />
+
                       <Bar
                         dataKey="hoursAgo"
                         fill="#ef4444"
@@ -634,7 +777,6 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Scrollable list (newest on top) */}
               <div className="lg:col-span-2">
                 <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
                   {usersLastActive.length ? (
@@ -676,17 +818,26 @@ export default function AdminDashboard() {
             </div>
           </CardShell>
 
-          {/* ONLY keep this (remove latest-date chart) */}
           <CardShell title="Disease detections over time (all dates)">
             <div className="h-[320px] w-full">
               <ResponsiveContainer>
                 <BarChart
                   data={diseaseSeries}
-                  margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+                  margin={{
+                    top: 10,
+                    right: compact ? 6 : 20,
+                    left: compact ? -10 : 0,
+                    bottom: 10,
+                  }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tickMargin={8} minTickGap={16} />
-                  <YAxis width={40} />
+                  <XAxis
+                    dataKey="date"
+                    tickMargin={8}
+                    minTickGap={compact ? 24 : 16}
+                    tickFormatter={(v) => (compact ? shortDate(v) : String(v))}
+                  />
+                  <YAxis width={compact ? 34 : 40} />
                   <Tooltip
                     formatter={(value: any, name: any) => {
                       if (name === "totalDiseaseCount")
@@ -701,7 +852,14 @@ export default function AdminDashboard() {
                       return `Date: ${label}${top}`;
                     }}
                   />
-                  <Legend />
+
+                  {/* ✅ small screen legend = colors only */}
+                  <Legend
+                    content={(props) => (
+                      <CompactLegend {...props} compact={compact} />
+                    )}
+                  />
+
                   <Bar
                     dataKey="totalDiseaseCount"
                     fill="#6366f1"
@@ -720,7 +878,7 @@ export default function AdminDashboard() {
           </CardShell>
         </div>
 
-        {/* Bottom card: external services / third-party portals */}
+        {/* ✅ Third-party stays at the VERY BOTTOM */}
         <div className="mt-4">
           <CardShell
             title="Third-party Services"
@@ -731,6 +889,9 @@ export default function AdminDashboard() {
               </span>
             }
           >
+            {/* ✅ Credentials message at TOP of this card */}
+            <ThirdPartyCredentialsNote />
+
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <ExternalServiceLink
                 title="Google Maps Billing"

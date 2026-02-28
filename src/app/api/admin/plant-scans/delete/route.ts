@@ -1,11 +1,47 @@
 import { NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/src/lib/firebase/admin";
+import { FieldValue } from "firebase-admin/firestore";
 import { deletePlantIdIdentification } from "@/src/lib/plantid/deleteIdentification";
 import { deleteFlorinConversation } from "@/src/lib/plantid/deleteFlorinConversation";
 
 export const runtime = "nodejs";
 
 type Body = { scanId: string };
+
+function toDayKeyFromData(data: any): string | null {
+  if (typeof data?.createdDay === "string" && data.createdDay.length >= 10) {
+    return data.createdDay.slice(0, 10);
+  }
+
+  const ts = data?.createdAt;
+  if (ts && typeof ts.toDate === "function") {
+    const d = ts.toDate();
+    return d ? d.toISOString().slice(0, 10) : null;
+  }
+
+  if (typeof data?.createdAtLocal === "number") {
+    const d = new Date(data.createdAtLocal);
+    return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  }
+
+  return null;
+}
+
+async function recomputeLastPlantScanAt() {
+  const snap = await adminDb
+    .collection("plant_scans")
+    .orderBy("createdAt", "desc")
+    .limit(1)
+    .get();
+
+  const newest = snap.docs[0]?.data();
+  const lastPlantScanAt = newest?.createdAt ?? null;
+
+  await adminDb
+    .collection("analytics")
+    .doc("global")
+    .set({ lastPlantScanAt }, { merge: true });
+}
 
 export async function POST(req: Request) {
   try {
@@ -41,7 +77,10 @@ export async function POST(req: Request) {
     }
 
     const data = snap.data() as any;
+
     const uid: string | null = data?.uid ?? null;
+    const createdDay = toDayKeyFromData(data);
+    const success: boolean | null = data?.success ?? null;
 
     const accessToken: string | null =
       data?.accessToken ??
@@ -49,30 +88,17 @@ export async function POST(req: Request) {
       data?.plantId?.accessToken ??
       null;
 
-    // Best-effort: delete conversation
-    let convoDeleted = false;
-    let convoDeleteError: string | null = null;
-
+    // Best-effort cleanup
     try {
-      await deleteFlorinConversation(accessToken);
-      convoDeleted = !!accessToken;
-    } catch (e: any) {
-      convoDeleteError = e?.message ?? "Conversation delete failed";
-    }
-
-    // Best-effort: delete identification
-    let plantIdDeleted = false;
-    let plantIdDeleteError: string | null = null;
-
+      if (accessToken) await deleteFlorinConversation(accessToken);
+    } catch {}
     try {
-      await deletePlantIdIdentification(accessToken);
-      plantIdDeleted = !!accessToken;
-    } catch (e: any) {
-      plantIdDeleteError = e?.message ?? "Plant.id delete failed";
-    }
+      if (accessToken) await deletePlantIdIdentification(accessToken);
+    } catch {}
 
-    // Delete Firestore docs
     const batch = adminDb.batch();
+
+    // Delete docs
     batch.delete(globalRef);
 
     if (uid) {
@@ -81,26 +107,55 @@ export async function POST(req: Request) {
         .doc(uid)
         .collection("plant_scans")
         .doc(body.scanId);
+
       batch.delete(userRef);
+
+      batch.set(
+        adminDb.collection("users").doc(uid),
+        {
+          scanCount: FieldValue.increment(-1),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+    }
+
+    // Decrement analytics
+    batch.set(
+      adminDb.collection("analytics").doc("global"),
+      {
+        totalPlantScans: FieldValue.increment(-1),
+        totalPlantScanSuccess: FieldValue.increment(success === true ? -1 : 0),
+        totalPlantScanFail: FieldValue.increment(success === false ? -1 : 0),
+      },
+      { merge: true },
+    );
+
+    if (createdDay) {
+      batch.set(
+        adminDb
+          .collection("analytics")
+          .doc("global")
+          .collection("daily")
+          .doc(createdDay),
+        {
+          plantScans: FieldValue.increment(-1),
+          successCount: FieldValue.increment(success === true ? -1 : 0),
+          failCount: FieldValue.increment(success === false ? -1 : 0),
+          lastUpdatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
     }
 
     await batch.commit();
 
+    await recomputeLastPlantScanAt();
+
     return NextResponse.json({
       ok: true,
       deletedId: body.scanId,
-      deletedFromUser: !!uid,
-      plantId: {
-        hadAccessToken: !!accessToken,
-        conversation: {
-          deleted: convoDeleted || !accessToken,
-          error: convoDeleteError,
-        },
-        identification: {
-          deleted: plantIdDeleted || !accessToken,
-          error: plantIdDeleteError,
-        },
-      },
+      analyticsUpdated: true,
     });
   } catch (e: any) {
     return NextResponse.json(
