@@ -19,6 +19,7 @@ import {
 
 import { useAppDispatch, useAppSelector } from "@/src/store/hooks";
 import { fetchAdminNotifSummary } from "@/src/store/slices/adminNotifSlice";
+import LogoSlider from "./ui/LogoSlider";
 
 type NotifKey =
   | "plant_scans"
@@ -103,17 +104,22 @@ export default function AdminSidebar() {
     <aside className="sticky top-0 h-screen w-72 shrink-0 border-r border-black/10 bg-white">
       <div className="h-full flex flex-col">
         {/* Brand */}
+        {/* Brand */}
         <div className="px-5 py-5 border-b border-black/10">
           <div className="flex items-center gap-3">
-            <div className="relative w-10 h-10">
-              <Image
-                src="/logo.png"
-                alt="KalikaScan"
-                fill
-                className="object-contain"
-                priority
-              />
-            </div>
+            {/* MOVING / SLIDER LOGO */}
+            <LogoSlider
+              size={40}
+              intervalMs={2200}
+              logos={[
+                { src: "/logo.png", alt: "KalikaScan" },
+                { src: "/cas-logo.png", alt: "cas" },
+                { src: "/coed-logo.png", alt: "coed" },
+                { src: "/esrdc-logo.png", alt: "esrdc" },
+                { src: "/ssu-logo.png", alt: "ssu" },
+              ]}
+            />
+
             <div className="leading-tight">
               <div className="text-sm font-bold text-app-headerText">
                 KalikaScan

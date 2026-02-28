@@ -55,10 +55,10 @@ export default function CreateAdminPage() {
   // modal
   const [openCreate, setOpenCreate] = useState(false);
 
-  // ✅ for "You" badge
+  //  for "You" badge
   const [myUid, setMyUid] = useState<string | null>(null);
 
-  // ✅ keep unsubscribe ref for Firestore listener
+  //  keep unsubscribe ref for Firestore listener
   const unsubAdminsRef = useRef<null | (() => void)>(null);
 
   function resetCreateForm() {
@@ -86,7 +86,7 @@ export default function CreateAdminPage() {
     setRole("admin");
   }
 
-  // ✅ LIVE subscribe to /admins so photoURL updates instantly
+  //  LIVE subscribe to /admins so photoURL updates instantly
   function subscribeAdmins() {
     setLoadingAdmins(true);
 
@@ -164,13 +164,13 @@ export default function CreateAdminPage() {
   }
 
   useEffect(() => {
-    // ✅ wait for auth to be ready
+    //  wait for auth to be ready
     const unsubAuth = onAuthStateChanged(auth, async (user) => {
       if (!user) return;
 
       await resolveMyRoleAndUid(user.uid);
 
-      // ✅ start realtime updates (this fixes old avatar issue)
+      //  start realtime updates (this fixes old avatar issue)
       subscribeAdmins();
 
       // optional: also do initial API fetch once (not required)
@@ -224,7 +224,7 @@ export default function CreateAdminPage() {
       closeCreateModal();
       resetCreateForm();
 
-      // ✅ no need to fetch, onSnapshot will update automatically
+      //  no need to fetch, onSnapshot will update automatically
       // but keeping this won't hurt:
       // fetchAdmins();
     } catch (e: any) {
@@ -283,7 +283,7 @@ export default function CreateAdminPage() {
         description: admin.email || admin.uid,
       });
 
-      // ✅ realtime listener will reflect updates; no fetch needed
+      //  realtime listener will reflect updates; no fetch needed
       // fetchAdmins();
     } catch (e: any) {
       showToast({
@@ -321,7 +321,7 @@ export default function CreateAdminPage() {
         description: admin.email || admin.uid,
       });
 
-      // ✅ realtime listener will reflect deletion; no fetch needed
+      //  realtime listener will reflect deletion; no fetch needed
       // fetchAdmins();
     } catch (e: any) {
       showToast({
@@ -336,30 +336,32 @@ export default function CreateAdminPage() {
     <div className="w-full h-[100dvh] overflow-hidden p-4">
       <div className="w-full h-full bg-white rounded-2xl shadow-xl border border-black/5 overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-6 sm:px-8 pt-6 pb-4 flex items-start justify-between gap-3">
+        <div className="px-4 sm:px-8 pt-5 sm:pt-6 pb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-xl font-semibold text-app-headerText">
+            <h2 className="text-lg sm:text-xl font-semibold text-app-headerText">
               KalikaScan Admins
             </h2>
-            <p className="text-sm text-app-text mt-1">
+            <p className="text-xs sm:text-sm text-app-text mt-1">
               Manage admins for the KalikaScan Admin Panel.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Actions */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto">
             <button
               type="button"
               onClick={openCreateModal}
-              className="rounded-lg bg-app-button text-white px-3 py-2 text-sm font-medium hover:brightness-110 active:scale-[0.99] transition"
+              className="h-9 px-4 rounded-lg bg-app-button text-white text-xs sm:text-sm font-medium hover:brightness-110 active:scale-[0.99] transition whitespace-nowrap flex-1 sm:flex-none inline-flex items-center justify-center"
             >
-              Register New Admin
+              <span className="hidden sm:inline">Register New Admin</span>
+              <span className="sm:hidden">New Admin</span>
             </button>
 
             <button
               type="button"
-              onClick={fetchAdmins} // manual refresh still works
+              onClick={fetchAdmins}
               disabled={loadingAdmins}
-              className="rounded-lg border border-gray-200 p-2 hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center"
               aria-label="Refresh admins"
               title="Refresh"
             >
@@ -373,15 +375,17 @@ export default function CreateAdminPage() {
         <div className="border-t border-gray-100" />
 
         {/* Table */}
-        <div className="flex-1 min-h-0 px-6 sm:px-8 py-5 overflow-hidden">
-          <AdminsTable
-            admins={admins}
-            loading={loadingAdmins}
-            isSuperAdmin={isSuperAdmin}
-            myUid={myUid}
-            onDisableAdmin={onDisableAdmin}
-            onDeleteAdmin={onDeleteAdmin}
-          />
+        <div className="flex-1 min-h-0 px-4 sm:px-8 py-4 sm:py-5 overflow-hidden">
+          <div className="h-full overflow-x-auto overflow-y-auto">
+            <AdminsTable
+              admins={admins}
+              loading={loadingAdmins}
+              isSuperAdmin={isSuperAdmin}
+              myUid={myUid}
+              onDisableAdmin={onDisableAdmin}
+              onDeleteAdmin={onDeleteAdmin}
+            />
+          </div>
         </div>
       </div>
 

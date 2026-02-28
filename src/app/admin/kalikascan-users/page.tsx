@@ -445,38 +445,39 @@ export default function KalikaScanUsersPage() {
     <div className="w-full h-[100dvh] overflow-hidden p-4">
       <div className="w-full h-full bg-white rounded-2xl shadow-xl border border-black/5 overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-6 sm:px-8 pt-6 pb-4 flex items-start justify-between gap-3">
+        <div className="px-4 sm:px-8 pt-5 sm:pt-6 pb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-xl font-semibold text-app-headerText">
+            <h2 className="text-lg sm:text-xl font-semibold text-app-headerText">
               KalikaScan Users
             </h2>
-            <p className="text-sm text-app-text mt-1">
+            <p className="text-xs sm:text-sm text-app-text mt-1">
               Loaded from Firestore <span className="font-mono">/users</span>{" "}
               collection.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Actions */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto">
             {/* Expert applications button */}
             <button
               type="button"
               onClick={openApplications}
-              className="rounded-lg border border-gray-200 px-3 py-2 hover:bg-gray-50 active:scale-[0.98] transition text-sm"
+              className="h-9 px-4 rounded-lg border border-gray-200 hover:bg-gray-50 active:scale-[0.98] transition text-xs sm:text-sm inline-flex items-center justify-center gap-2 whitespace-nowrap flex-1 sm:flex-none"
               title="Expert applications"
             >
-              <span className="inline-flex items-center gap-2">
-                <UsersIcon className="h-4 w-4" />
-                Expert applications
-                <span
-                  className={[
-                    "ml-2 text-xs font-semibold px-2.5 py-0.5 rounded-full transition-all duration-300",
-                    pendingCount > 0
-                      ? "bg-red-600 text-white shadow-lg shadow-red-500/40 animate-pulse scale-110"
-                      : "bg-gray-200 text-gray-600",
-                  ].join(" ")}
-                >
-                  {pendingCount}
-                </span>
+              <UsersIcon className="h-4 w-4" />
+              <span className="hidden sm:inline">Expert applications</span>
+              <span className="sm:hidden">Expert apps</span>
+
+              <span
+                className={[
+                  "ml-1 text-xs font-semibold px-2.5 py-0.5 rounded-full transition-all duration-300",
+                  pendingCount > 0
+                    ? "bg-red-600 text-white shadow-lg shadow-red-500/40 animate-pulse scale-110"
+                    : "bg-gray-200 text-gray-600",
+                ].join(" ")}
+              >
+                {pendingCount}
               </span>
             </button>
 
@@ -485,7 +486,7 @@ export default function KalikaScanUsersPage() {
               type="button"
               onClick={refreshAll}
               disabled={anyLoading}
-              className="rounded-lg border border-gray-200 p-2 hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center"
               aria-label="Refresh"
               title="Refresh"
             >
@@ -497,15 +498,15 @@ export default function KalikaScanUsersPage() {
         </div>
 
         {/* Search */}
-        <div className="px-6 sm:px-8 pb-4">
-          <div className="max-w-xl w-full">
+        <div className="px-4 sm:px-8 pb-4">
+          <div className="w-full sm:max-w-xl">
             <div className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 bg-white">
-              <Search className="h-4 w-4 text-gray-400" />
+              <Search className="h-4 w-4 text-gray-400 shrink-0" />
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search by email, name, username, uid, role..."
-                className="w-full outline-none text-sm"
+                className="w-full outline-none text-sm min-w-0"
               />
             </div>
           </div>
@@ -514,15 +515,18 @@ export default function KalikaScanUsersPage() {
         <div className="border-t border-gray-100" />
 
         {/* Table */}
-        <div className="flex-1 min-h-0 px-6 sm:px-8 py-5 overflow-hidden">
-          <UsersTable
-            users={filtered}
-            loading={loading}
-            myUid={myUid}
-            onOpenBanModal={openBanModal}
-            onDeleteUser={onDeleteUser}
-            onChangeRole={onChangeRole}
-          />
+        <div className="flex-1 min-h-0 px-4 sm:px-8 py-4 sm:py-5 overflow-hidden">
+          {/* If UsersTable contains a wide table, this wrapper enables horizontal scroll */}
+          <div className="h-full overflow-x-auto overflow-y-auto">
+            <UsersTable
+              users={filtered}
+              loading={loading}
+              myUid={myUid}
+              onOpenBanModal={openBanModal}
+              onDeleteUser={onDeleteUser}
+              onChangeRole={onChangeRole}
+            />
+          </div>
         </div>
       </div>
 

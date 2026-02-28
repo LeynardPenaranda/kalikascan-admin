@@ -77,16 +77,19 @@ function DetailRow({
 }) {
   return (
     <div
-      className={`flex justify-between items-center px-6 py-4 ${
-        !isLast ? "border-b border-gray-200" : ""
-      }`}
+      className={[
+        "px-4 sm:px-6 py-3 sm:py-4",
+        !isLast ? "border-b border-gray-200" : "",
+        "flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4",
+      ].join(" ")}
     >
-      <span className="text-gray-500">{label}</span>
-      <span className="font-medium text-gray-800 text-right">{value}</span>
+      <span className="text-gray-500 text-sm">{label}</span>
+      <span className="font-medium text-gray-800 text-sm sm:text-right break-words">
+        {value}
+      </span>
     </div>
   );
 }
-
 export default function AdminProfilePage() {
   const { showToast } = useToast();
 
@@ -285,47 +288,47 @@ export default function AdminProfilePage() {
   if (!admin) return null;
 
   return (
-    <div className="min-h-screen w-full bg-white p-6">
+    <div className="min-h-screen w-full bg-white p-4 sm:p-6">
       <div className="mx-auto max-w-4xl">
         <Card>
-          <div className="flex flex-col md:flex-row gap-10">
+          <div className="flex flex-col md:flex-row gap-8 md:gap-10">
             {/* LEFT */}
-            <div className="flex flex-col items-center gap-4">
-              <div
-                className="relative overflow-hidden rounded-lg border"
-                style={{ width: 180, height: 180 }}
-              >
+            <div className="flex flex-col items-center md:items-start gap-4 md:w-[260px]">
+              <div className="relative overflow-hidden rounded-lg border w-36 h-36 sm:w-44 sm:h-44 md:w-48 md:h-48">
                 <NextImage
                   key={squareSrc}
                   src={squareSrc}
                   alt="Admin profile"
                   fill
-                  sizes="180px"
+                  sizes="(max-width: 640px) 144px, (max-width: 768px) 176px, 192px"
                   style={{ objectFit: "cover" }}
                 />
               </div>
 
-              <Upload
-                listType="picture-circle"
-                fileList={fileList}
-                onPreview={handlePreview}
-                onChange={handleChange}
-                beforeUpload={beforeUpload}
-                maxCount={1}
-                multiple={false}
-                accept="image/*"
-              >
-                {fileList.length >= 1 ? null : uploadButton}
-              </Upload>
+              <div className="flex flex-col items-center md:items-start gap-3">
+                <Upload
+                  listType="picture-circle"
+                  fileList={fileList}
+                  onPreview={handlePreview}
+                  onChange={handleChange}
+                  beforeUpload={beforeUpload}
+                  maxCount={1}
+                  multiple={false}
+                  accept="image/*"
+                >
+                  {fileList.length >= 1 ? null : uploadButton}
+                </Upload>
 
-              <Button
-                type="primary"
-                onClick={onConfirmUpload}
-                loading={savingPhoto}
-                disabled={fileList.length === 0}
-              >
-                Confirm upload
-              </Button>
+                <Button
+                  type="primary"
+                  onClick={onConfirmUpload}
+                  loading={savingPhoto}
+                  disabled={fileList.length === 0}
+                  style={{ width: "100%" }}
+                >
+                  Confirm upload
+                </Button>
+              </div>
 
               {previewImage && (
                 <AntImage
@@ -342,16 +345,21 @@ export default function AdminProfilePage() {
             </div>
 
             {/* RIGHT */}
-            <div className="flex-1">
-              <div className="flex items-center justify-between gap-3">
-                <Title level={4} style={{ marginBottom: 20 }}>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <Title level={4} style={{ marginBottom: 0 }}>
                   Profile Information
                 </Title>
 
-                <Button onClick={() => setEditOpen(true)}>Edit name</Button>
+                <Button
+                  onClick={() => setEditOpen(true)}
+                  className="w-full sm:w-auto"
+                >
+                  Edit name
+                </Button>
               </div>
 
-              <div className="rounded-lg border bg-white">
+              <div className="mt-4 rounded-lg border bg-white">
                 <DetailRow label="Name" value={admin.displayName || "—"} />
                 <DetailRow label="Email account" value={admin.email || "—"} />
                 <DetailRow label="Role" value={admin.role || "—"} />

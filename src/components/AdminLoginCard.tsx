@@ -11,6 +11,8 @@ import { Eye, EyeClosed, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 
+import ScrollingLogos from "./ui/ScrollingLogos";
+
 type Props = {
   onSuccess?: () => void;
 };
@@ -154,20 +156,19 @@ export default function AdminLoginCard({ onSuccess }: Props) {
   return (
     <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 space-y-6">
       <div className="text-center space-y-1">
-        <div className="flex items-center justify-center w-full gap-5 mb-5">
-          <Image src={"/ssu-logo.png"} alt="ssu-logo" width={70} height={70} />
-          <Image
-            src={"/esrdc-logo.png"}
-            alt="esrdc-logo"
-            width={70}
-            height={70}
-          />
-          <Image src={"/cas-logo.png"} alt="cas-logo" width={70} height={70} />
-          <Image
-            src={"/coed-logo.png"}
-            alt="coed-logo"
-            width={70}
-            height={70}
+        <div className="w-full max-w-full overflow-hidden mb-5">
+          <ScrollingLogos
+            logos={[
+              { src: "/ssu-logo.png", alt: "SSU Logo" },
+              { src: "/esrdc-logo.png", alt: "ESRDC Logo" },
+              { src: "/cas-logo.png", alt: "CAS Logo" },
+              { src: "/coed-logo.png", alt: "COED Logo" },
+            ]}
+            heightClass="h-[72px] sm:h-[80px] md:h-[88px]"
+            itemClass="w-12 sm:w-16 md:w-20"
+            gapClass="gap-6 sm:gap-8 md:gap-10"
+            duration={28}
+            fadeEdges
           />
         </div>
         <p className="text-xs text-center">

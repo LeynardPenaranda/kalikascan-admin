@@ -347,7 +347,8 @@ export default function HealthAssessmentsReport() {
   return (
     <div className="w-full h-full overflow-hidden flex flex-col mt-5">
       {/* Top bar */}
-      <div className="flex items-center justify-between gap-3 mb-3">
+
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
         <div className="text-xs text-gray-500">
           {loading ? (
             <>
@@ -376,96 +377,102 @@ export default function HealthAssessmentsReport() {
           ) : null}
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="hidden sm:block">
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search user, status, disease, date, address..."
-              className="w-[360px] max-w-full text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none bg-white transition"
-            />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {/* LEFT SIDE — SEARCH */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {/* Mobile search */}
+            <div className="sm:hidden flex-1">
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search health assessments..."
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs outline-none bg-white"
+              />
+            </div>
+
+            {/* Desktop search */}
+            <div className="hidden sm:block">
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search user, status, disease, date, address..."
+                className="w-[360px] text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none bg-white transition"
+              />
+            </div>
+
+            {q.trim() && (
+              <button
+                type="button"
+                onClick={() => setQ("")}
+                className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-white hover:bg-gray-50 transition"
+                title="Clear search"
+              >
+                Clear
+              </button>
+            )}
           </div>
 
-          {q.trim() ? (
+          {/* RIGHT SIDE — ACTIONS */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             <button
               type="button"
-              onClick={() => setQ("")}
-              className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-white hover:bg-gray-50 active:scale-[0.98] transition"
-              title="Clear search"
+              onClick={loadHealth}
+              disabled={refreshing}
+              className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-white hover:bg-gray-50 transition disabled:opacity-50 inline-flex items-center gap-2"
+              title="Refresh data"
             >
-              Clear
+              <RotateCcw
+                className={refreshing ? "animate-spin" : ""}
+                size={14}
+              />
+              {refreshing ? "Refreshing..." : "Refresh"}
             </button>
-          ) : null}
 
-          <button
-            type="button"
-            onClick={loadHealth}
-            disabled={refreshing}
-            className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-white hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-            title="Refresh data"
-          >
-            <RotateCcw className={refreshing ? "animate-spin" : ""} size={14} />
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </button>
+            <button
+              type="button"
+              onClick={onDownload}
+              disabled={loading || downloading || total === 0}
+              className="h-9 px-4 text-xs rounded-lg border border-gray-200 bg-app-button text-white hover:bg-app-buttonHover transition disabled:opacity-50 inline-flex items-center justify-center gap-2 whitespace-nowrap"
+              title={total === 0 ? "No records to export" : "Download CSV"}
+            >
+              <FileDown size={14} />
+              <span className="hidden sm:inline">
+                {downloading ? "Preparing..." : "Download Health Report.csv"}
+              </span>
+              <span className="sm:hidden">
+                {downloading ? "Preparing..." : "Download"}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={onDownload}
-            disabled={loading || downloading || total === 0}
-            className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-app-button text-white hover:bg-app-buttonHover active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-            title={total === 0 ? "No records to export" : "Download CSV"}
-          >
-            <FileDown size={14} />
-            {downloading ? "Preparing..." : "Download Health Report.csv"}
-          </button>
+            <button
+              type="button"
+              onClick={goPrev}
+              disabled={loading || page <= 1}
+              className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-white hover:bg-gray-50 transition disabled:opacity-50"
+            >
+              Prev
+            </button>
 
-          <button
-            type="button"
-            onClick={goPrev}
-            disabled={loading || page <= 1}
-            className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-white hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Prev
-          </button>
+            <div className="text-xs text-gray-600 whitespace-nowrap">
+              Page <span className="font-medium">{page}</span> /{" "}
+              <span className="font-medium">{totalPages}</span>
+            </div>
 
-          <div className="text-xs text-gray-600">
-            Page <span className="font-medium">{page}</span> /{" "}
-            <span className="font-medium">{totalPages}</span>
+            <button
+              type="button"
+              onClick={goNext}
+              disabled={loading || page >= totalPages}
+              className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-white hover:bg-gray-50 transition disabled:opacity-50"
+            >
+              Next
+            </button>
           </div>
-
-          <button
-            type="button"
-            onClick={goNext}
-            disabled={loading || page >= totalPages}
-            className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-white hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Next
-          </button>
         </div>
       </div>
 
-      {/* Mobile search row */}
-      <div className="sm:hidden mb-3 flex items-center gap-2">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search health assessments..."
-          className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-xs outline-none bg-white transition"
-        />
-        {q.trim() ? (
-          <button
-            type="button"
-            onClick={() => setQ("")}
-            className="text-xs rounded-lg border border-gray-200 px-3 py-2 bg-white hover:bg-gray-50 active:scale-[0.98] transition"
-          >
-            Clear
-          </button>
-        ) : null}
-      </div>
-
       {/* Table */}
-      <div className="flex-1 min-h-0 overflow-auto rounded-xl border border-gray-100 bg-white">
-        <table className="w-full text-sm">
+      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto rounded-xl border border-gray-100 bg-white">
+        <table className="min-w-[1200px] table-fixed text-sm">
           <thead className="sticky top-0 bg-white z-10">
             <tr className="text-left border-b border-gray-100">
               <th className="px-4 py-3 font-medium text-gray-600">
